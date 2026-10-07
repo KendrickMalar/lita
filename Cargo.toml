@@ -5,7 +5,7 @@ members = ["crates/*", "src-tauri"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/Papillon6814/lita"
+repository = "https://github.com/KendrickMalar/lita"
 
 # Cargo only honours profiles at the workspace root. These are the settings
 # Tauri recommends for a small binary: https://tauri.app/concept/size/

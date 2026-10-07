@@ -1,5 +1,5 @@
-# When a release is published, rewrites the cask in Papillon6814/homebrew-lita
-# so `brew install --cask papillon6814/lita/lita` gets the new version.
+# When a release is published, rewrites the cask in KendrickMalar/homebrew-lita
+# so `brew install --cask KendrickMalar/lita/lita` gets the new version.
 #
 # Secret: HOMEBREW_TAP_TOKEN — a fine-grained PAT with contents: write on the tap.
 name: homebrew
@@ -34,7 +34,7 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
-          repository: Papillon6814/homebrew-lita
+          repository: KendrickMalar/homebrew-lita
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
       - name: Write the cask
@@ -48,8 +48,8 @@ jobs:
             version "${VERSION}"
             sha256 "${SHA}"
 
-            url "https://github.com/Papillon6814/lita/releases/download/v#{version}/Lita_#{version}_aarch64.dmg",
-                verified: "github.com/Papillon6814/lita/"
+            url "https://github.com/KendrickMalar/lita/releases/download/v#{version}/Lita_#{version}_aarch64.dmg",
+                verified: "github.com/KendrickMalar/lita/"
             name "Lita"
             desc "Writes your posts in your own voice, using the Codex CLI login you already have"
             homepage "https://lita.muumoo.online/"

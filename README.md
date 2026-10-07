@@ -88,7 +88,7 @@ Brief, in the editor ──────────────┘
 ## Installing
 
 Apple Silicon Macs, macOS 12 or later. Download the DMG from the
-[latest release](https://github.com/Papillon6814/lita/releases/latest).
+[latest release](https://github.com/KendrickMalar/lita/releases/latest).
 
 Builds are not yet signed with an Apple Developer ID, so macOS will refuse to
 open the app the first time. Either allow it under System Settings › Privacy &
@@ -99,7 +99,7 @@ xattr -d com.apple.quarantine /Applications/Lita.app
 ```
 
 Once installed, Lita checks for updates when it starts and from
-**Lita › アップデートを確認…**. A Homebrew cask (`papillon6814/lita/lita`) will
+**Lita › アップデートを確認…**. A Homebrew cask (`KendrickMalar/lita/lita`) will
 follow once builds are signed.
 
 ## Running from source

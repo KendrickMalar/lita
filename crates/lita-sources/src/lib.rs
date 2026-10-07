@@ -25,7 +25,7 @@ pub struct Piece {
     pub text: String,
 }
 
-pub(crate) const USER_AGENT: &str = "Lita/0.1 (+https://github.com/Papillon6814/lita)";
+pub(crate) const USER_AGENT: &str = "Lita/0.1 (+https://github.com/KendrickMalar/lita)";
 
 pub(crate) fn http() -> anyhow::Result<reqwest::blocking::Client> {
     Ok(reqwest::blocking::Client::builder()

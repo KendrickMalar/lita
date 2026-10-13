@@ -8,7 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use lita_codex::{load_choice, save_choice, EngineKind};
+use lita_engine::{load_choice, save_choice, EngineKind};
 use serde_json::{json, Value};
 
 fn choice_path(dir: &tempfile::TempDir) -> PathBuf {

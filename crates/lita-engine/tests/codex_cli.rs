@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use lita_codex::{CodexCli, Effort, FailureKind, Preflight, Request, RunFailure};
+use lita_engine::{CodexCli, Effort, FailureKind, Preflight, Request, RunFailure};
 use serde::Deserialize;
 use serde_json::{json, Value};
 

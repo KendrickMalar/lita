@@ -2,13 +2,13 @@
 //!
 //! This gates a scope decision: a free Slack workspace only exposes the last
 //! 90 days of messages, so if a Voice needs hundreds of messages, free-plan
-//! users cannot build one. Run with `cargo run -p lita-codex --bin corpus`.
+//! users cannot build one. Run with `cargo run -p lita-engine --bin corpus`.
 
 use anyhow::Result;
-use lita_codex::voice::VoiceProfile;
-use lita_codex::{CodexCli, Effort, Preflight, Request};
+use lita_engine::voice::VoiceProfile;
+use lita_engine::{CodexCli, Effort, Preflight, Request};
 
-use lita_codex::sample::WORK_CHAT as MESSAGES;
+use lita_engine::sample::WORK_CHAT as MESSAGES;
 
 const SIZES: &[usize] = &[4, 8, 24];
 

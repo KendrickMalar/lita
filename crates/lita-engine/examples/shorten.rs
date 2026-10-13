@@ -2,9 +2,9 @@
 //! over-long draft, and prints what comes back. Uses about ten seconds of
 //! the account's Codex quota.
 
-use lita_codex::post::{PlatformRules, PostDraft, post_schema, shorten_prompt};
-use lita_codex::voice::VoiceProfile;
-use lita_codex::{CodexCli, Effort, Request};
+use lita_engine::post::{PlatformRules, PostDraft, post_schema, shorten_prompt};
+use lita_engine::voice::VoiceProfile;
+use lita_engine::{CodexCli, Effort, Request};
 
 fn main() -> anyhow::Result<()> {
     let profile = VoiceProfile {

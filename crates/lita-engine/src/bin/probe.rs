@@ -2,13 +2,13 @@
 //!
 //! This exists to answer one question before any UI is built: can we spawn the
 //! user's Codex CLI and get back JSON we can rely on? Run it with
-//! `cargo run -p lita-codex --bin probe`.
+//! `cargo run -p lita-engine --bin probe`.
 
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
-use lita_codex::voice::VoiceProfile;
-use lita_codex::{CodexCli, Effort, Event, Preflight, Request};
+use lita_engine::voice::VoiceProfile;
+use lita_engine::{CodexCli, Effort, Event, Preflight, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -119,7 +119,7 @@ fn main() -> Result<()> {
          characters. `representative_excerpts` should quote at most three short passages \
          verbatim and say what each one reveals. Write the descriptive values in Japanese."
     );
-    lita_codex::assert_no_credentials(&voice_prompt);
+    lita_engine::assert_no_credentials(&voice_prompt);
 
     let mut trace = EventTrace::new();
     let voice = codex.run_typed::<VoiceProfile>(
@@ -148,7 +148,7 @@ fn main() -> Result<()> {
          one sentence which parts of the profile you leaned on.",
         serde_json::to_string_pretty(&voice.value.generation_view())?
     );
-    lita_codex::assert_no_credentials(&post_prompt);
+    lita_engine::assert_no_credentials(&post_prompt);
 
     let mut trace = EventTrace::new();
     let post = codex.run_typed::<Post>(

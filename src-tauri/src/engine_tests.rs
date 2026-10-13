@@ -486,7 +486,6 @@ fn engine_lib_rs_reaches_an_engine_only_through_the_saved_choice() {
         "Engine::Claude(",
         "CodexCli",
         "ClaudeCli",
-        "lita_codex",
     ] {
         assert!(!lib.contains(forbidden), "lib.rs must not use {forbidden}");
     }

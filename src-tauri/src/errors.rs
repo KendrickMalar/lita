@@ -2,7 +2,7 @@
 //! sentence in the person's language, plus the raw `detail` for a
 //! "show details" disclosure. Never the only thing shown (R-5).
 
-use lita_engine::{FailureKind, RunFailure};
+use lita_engine::{EngineKind, FailureKind, RunFailure};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -36,12 +36,16 @@ impl From<anyhow::Error> for UiError {
     fn from(e: anyhow::Error) -> Self {
         let detail = format!("{e:#}");
         if let Some(run) = e.downcast_ref::<RunFailure>() {
-            let code = match run.kind {
-                FailureKind::NotLoggedIn => "codex_not_logged_in",
-                FailureKind::QuotaExhausted => "codex_quota",
-                FailureKind::SchemaMismatch => "codex_schema",
-                FailureKind::Cancelled => "cancelled",
-                FailureKind::Unknown => "codex_failed",
+            let code = match (run.engine, run.kind) {
+                (EngineKind::Codex, FailureKind::NotLoggedIn) => "codex_not_logged_in",
+                (EngineKind::Codex, FailureKind::QuotaExhausted) => "codex_quota",
+                (EngineKind::Codex, FailureKind::SchemaMismatch) => "codex_schema",
+                (EngineKind::Codex, FailureKind::Unknown) => "codex_failed",
+                (EngineKind::Claude, FailureKind::NotLoggedIn) => "claude_not_logged_in",
+                (EngineKind::Claude, FailureKind::QuotaExhausted) => "claude_quota",
+                (EngineKind::Claude, FailureKind::SchemaMismatch) => "claude_schema",
+                (EngineKind::Claude, FailureKind::Unknown) => "claude_failed",
+                (_, FailureKind::Cancelled) => "cancelled",
             };
             return Self { code, detail };
         }

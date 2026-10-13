@@ -8,6 +8,7 @@
 //! wrong change.
 
 pub mod choice;
+pub mod claude;
 pub mod codex;
 pub mod engine;
 pub mod post;
@@ -23,6 +24,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 pub use choice::{load_choice, save_choice};
+pub use claude::ClaudeCli;
 pub use codex::{CodexCli, TurnFailure};
 pub use engine::EngineKind;
 

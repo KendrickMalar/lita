@@ -8,7 +8,8 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import type * as T from "./types";
 
 export const tauriHost: T.Host = {
-  codexStatus: () => invoke<T.CodexStatus>("codex_status"),
+  engineStatus: () => invoke<T.EnginesStatus>("engine_status"),
+  selectEngine: (engine) => invoke<void>("select_engine", { engine }),
   sessionStatus: () => invoke<T.SessionStatus>("session_status"),
   signIn: () => invoke<T.SessionStatus>("sign_in"),
   cancelSignIn: () => invoke<void>("cancel_sign_in"),

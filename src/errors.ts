@@ -8,7 +8,8 @@ import type { MessageKey } from "./i18n/en";
 
 const KNOWN = new Set([
   "not_signed_in", "session_expired", "cancelled", "sign_in_timeout", "network", "account_not_found",
-  "invalid_input", "codex_not_logged_in", "codex_quota", "codex_schema", "codex_failed", "unknown",
+  "invalid_input", "codex_not_logged_in", "codex_quota", "codex_schema", "codex_failed",
+  "claude_not_installed", "claude_not_logged_in", "claude_quota", "claude_schema", "claude_failed", "unknown",
 ]);
 
 export function asUiError(e: unknown): UiError {

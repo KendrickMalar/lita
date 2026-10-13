@@ -18,7 +18,7 @@
 
 use super::measure::measure;
 use super::{Backing, Confidence, Evidence, VoiceProfile};
-use crate::{CodexCli, Effort, Request};
+use crate::{Effort, Engine, Request};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -225,7 +225,7 @@ fn quotes_for(pieces: &[String], needle: &str, max: usize) -> Vec<Evidence> {
 }
 
 pub fn extract(
-    cli: &CodexCli,
+    cli: &Engine,
     sources: &[&str],
     cfg: &Config,
     working_dir: PathBuf,

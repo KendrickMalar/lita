@@ -3,12 +3,12 @@
 //! Extracts one profile from the sample corpus, then writes the same post from
 //! four different subsets of it. Every field we send costs latency on every
 //! post, so the question is not "what describes a voice" but "what changes the
-//! draft". Run with `cargo run -p lita-codex --bin schema`.
+//! draft". Run with `cargo run -p lita-engine --bin schema`.
 
 use anyhow::Result;
-use lita_codex::sample::WORK_CHAT;
-use lita_codex::voice::VoiceProfile;
-use lita_codex::{CodexCli, Effort, Preflight, Request};
+use lita_engine::sample::WORK_CHAT;
+use lita_engine::voice::VoiceProfile;
+use lita_engine::{CodexCli, Effort, Preflight, Request};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 

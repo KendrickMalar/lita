@@ -2443,7 +2443,7 @@ dependencies = [
  "anyhow",
  "fix-path-env",
  "lita-auth",
- "lita-codex",
+ "lita-engine",
  "lita-sources",
  "lita-store",
  "reqwest 0.12.28",
@@ -2472,7 +2472,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lita-codex"
+name = "lita-engine"
 version = "0.0.0"
 dependencies = [
  "anyhow",
@@ -2500,7 +2500,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "lita-auth",
- "lita-codex",
+ "lita-engine",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

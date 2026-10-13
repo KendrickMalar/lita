@@ -2,6 +2,9 @@
 //! `#[tauri::command]` here; the actual work lives in the `lita-*` crates.
 
 mod config;
+mod engine;
+#[cfg(test)]
+mod engine_tests;
 mod errors;
 
 use std::collections::HashSet;
@@ -13,13 +16,13 @@ use std::time::{Duration, Instant};
 use errors::UiError;
 
 use lita_auth::{Session, SessionStore, SupabaseAuth};
-use lita_codex::post::{PlatformRules, PostDraft, generation_prompt, post_schema};
-use lita_codex::presets;
-use lita_codex::topics::{
+use lita_engine::post::{PlatformRules, PostDraft, generation_prompt, post_schema};
+use lita_engine::presets;
+use lita_engine::topics::{
     self, ArticleText, Existing, GatheredCloud, Lang, Policy, SuggestedBrief, TopicCloud, Topics,
 };
-use lita_codex::voice::{VoiceProfile, pipeline};
-use lita_codex::{CodexCli, Preflight, Request};
+use lita_engine::voice::{VoiceProfile, pipeline};
+use lita_engine::{Engine, EngineKind, Request};
 use lita_sources::Piece;
 use lita_store::{
     Article, ArticlePatch, ArticleStatus, ArticleSummary, ArticleVersion, NewArticle, NewSource,
@@ -31,33 +34,6 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuild
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
-
-/// What the UI needs to know about Codex before anything else can happen.
-/// Each variant maps to a different next step for the user, which is why
-/// they stay distinct instead of collapsing into ok/error.
-#[derive(Debug, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum CodexStatus {
-    Ready { version: String },
-    NotLoggedIn { version: String },
-    NotInstalled,
-    ConfigBroken { version: String, message: String },
-    Error { message: String },
-}
-
-impl From<Preflight> for CodexStatus {
-    fn from(p: Preflight) -> Self {
-        match p {
-            Preflight::Ready { version } => CodexStatus::Ready { version },
-            Preflight::NotLoggedIn { version } => CodexStatus::NotLoggedIn { version },
-            Preflight::NotInstalled => CodexStatus::NotInstalled,
-            Preflight::ConfigBroken { version, detail } => CodexStatus::ConfigBroken {
-                version,
-                message: detail,
-            },
-        }
-    }
-}
 
 /// Whether someone is signed in to Lita (not to Codex; that is separate).
 #[derive(Debug, Clone, Serialize)]
@@ -639,20 +615,38 @@ fn fail(e: anyhow::Error) -> UiError {
     UiError::from(e)
 }
 
-/// Runs `codex doctor --json` off the main thread, because it takes about a
-/// second and the window must not freeze while it does.
+/// Checks both engines off the main thread (each takes about a second and
+/// the window must not freeze), side by side, and says which one is chosen.
 #[tauri::command]
-async fn codex_status() -> CodexStatus {
-    let result = tauri::async_runtime::spawn_blocking(|| CodexCli::on_path().preflight()).await;
-    match result {
-        Ok(Ok(preflight)) => preflight.into(),
-        Ok(Err(e)) => CodexStatus::Error {
-            message: format!("{e:#}"),
-        },
-        Err(e) => CodexStatus::Error {
+async fn engine_status(app: AppHandle) -> engine::EnginesStatus {
+    let selected = engine::choice_path(&app)
+        .map(|path| engine::selected(&path))
+        .unwrap_or(EngineKind::Codex);
+    let codex = tauri::async_runtime::spawn_blocking(|| engine::preflight_of(EngineKind::Codex));
+    let claude = tauri::async_runtime::spawn_blocking(|| engine::preflight_of(EngineKind::Claude));
+    engine::EnginesStatus {
+        selected,
+        codex: preflight_status(codex.await),
+        claude: preflight_status(claude.await),
+    }
+}
+
+fn preflight_status(
+    joined: Result<anyhow::Result<lita_engine::Preflight>, tauri::Error>,
+) -> engine::EngineStatus {
+    match joined {
+        Ok(result) => engine::EngineStatus::from_result(result),
+        Err(e) => engine::EngineStatus::Error {
             message: format!("preflight task failed: {e}"),
         },
     }
+}
+
+/// Saves the person's engine choice. It applies to the next run; a run
+/// already under way keeps the engine it started with.
+#[tauri::command]
+fn select_engine(app: AppHandle, engine: EngineKind) -> Result<(), UiError> {
+    engine::select(&engine::choice_path(&app)?, engine)
 }
 
 #[tauri::command]
@@ -979,6 +973,7 @@ fn to_sources(sources: Vec<SourceInput>) -> Vec<NewSource> {
 /// relearning (#68). Falls back to the single call inside the pipeline.
 fn extract_profile(
     app: &AppHandle,
+    engine: &Engine,
     sources: &[NewSource],
     cancel: Arc<AtomicBool>,
     working_dir: std::path::PathBuf,
@@ -987,7 +982,7 @@ fn extract_profile(
     let bodies: Vec<&str> = sources.iter().map(|s| s.body.as_str()).collect();
     let emitter = app.clone();
     let outcome = pipeline::extract(
-        &CodexCli::on_path(),
+        engine,
         &bodies,
         &pipeline::Config::default(),
         working_dir,
@@ -1071,8 +1066,9 @@ async fn create_voice(
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
+    let engine = engine::resolve(&engine::choice_path(&app)?);
     tauri::async_runtime::spawn_blocking(move || -> Result<Voice, UiError> {
-        let profile = extract_profile(&app, &sources, cancel, working_dir)?;
+        let profile = extract_profile(&app, &engine, &sources, cancel, working_dir)?;
         let voice = app
             .state::<AppState>()
             .store
@@ -1164,6 +1160,7 @@ async fn rebuild_voice(app: AppHandle, voice_id: String) -> Result<Voice, UiErro
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
+    let engine = engine::resolve(&engine::choice_path(&app)?);
     tauri::async_runtime::spawn_blocking(move || -> Result<Voice, UiError> {
         let state = app.state::<AppState>();
         let user = state.store.as_user(token);
@@ -1185,7 +1182,7 @@ async fn rebuild_voice(app: AppHandle, voice_id: String) -> Result<Voice, UiErro
         if sources.is_empty() {
             return Err(UiError::invalid("this voice has no writing to learn from"));
         }
-        let profile = extract_profile(&app, &sources, cancel, working_dir)?;
+        let profile = extract_profile(&app, &engine, &sources, cancel, working_dir)?;
         store.update_profile(&voice_id, &profile).map_err(fail)?;
         let _ = app.emit("voice-progress", VoiceProgress::Saved);
         store
@@ -1320,13 +1317,13 @@ pub struct DraftView {
 /// One place decides between a fresh draft and a shorter rewrite (#40), so
 /// the preview and the run can never disagree.
 fn prompt_for(
-    profile: &lita_codex::voice::VoiceProfile,
+    profile: &lita_engine::voice::VoiceProfile,
     brief: &str,
-    rules: &lita_codex::post::PlatformRules,
+    rules: &lita_engine::post::PlatformRules,
     previous: Option<&str>,
 ) -> String {
     match previous.map(str::trim).filter(|p| !p.is_empty()) {
-        Some(prev) => lita_codex::post::shorten_prompt(profile, brief, rules, prev),
+        Some(prev) => lita_engine::post::shorten_prompt(profile, brief, rules, prev),
         None => generation_prompt(profile, brief, rules),
     }
 }
@@ -1547,13 +1544,15 @@ enum ArticleWriteMode {
 
 struct ArticleWriteContext<'a> {
     app: &'a AppHandle,
+    /// Resolved once when the run began; the whole article is written by it.
+    engine: &'a Engine,
     token: String,
     profile_id: &'a str,
     cancel: Arc<AtomicBool>,
     working_dir: std::path::PathBuf,
 }
 
-/// Runs Codex for one article and records the result as a version and as
+/// Runs the selected engine for one article and records the result as a version and as
 /// the article's current text. Shared by the v0.1 write screen and the
 /// editor. Measured 6.6 s (Fast) / 10.8 s (Quality) for a short X post (D-24).
 fn write_article(
@@ -1565,6 +1564,7 @@ fn write_article(
 ) -> Result<(Article, ArticleVersion, String), UiError> {
     let ArticleWriteContext {
         app,
+        engine,
         token,
         profile_id,
         cancel,
@@ -1609,7 +1609,7 @@ fn write_article(
         effort: effort.into(),
         working_dir,
     };
-    let run = CodexCli::on_path()
+    let run = engine
         .run_typed_cancellable::<PostDraft>(&req, |_| {}, Arc::clone(&cancel))
         .map_err(fail)?;
 
@@ -1800,7 +1800,7 @@ async fn generate_draft(
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
-
+    let engine = engine::resolve(&engine::choice_path(&app)?);
     tauri::async_runtime::spawn_blocking(move || -> Result<Generated, UiError> {
         let id = {
             let state = app.state::<AppState>();
@@ -1835,6 +1835,7 @@ async fn generate_draft(
         let (article, version, voice_notes) = write_article(
             ArticleWriteContext {
                 app: &app,
+                engine: &engine,
                 token,
                 profile_id: &profile_id,
                 cancel,
@@ -1883,10 +1884,12 @@ async fn generate_into_article(
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
+    let engine = engine::resolve(&engine::choice_path(&app)?);
     tauri::async_runtime::spawn_blocking(move || {
         let (article, version, voice_notes) = write_article(
             ArticleWriteContext {
                 app: &app,
+                engine: &engine,
                 token,
                 profile_id: &profile_id,
                 cancel,
@@ -1993,6 +1996,9 @@ fn stops_the_queue(code: &str) -> bool {
             | "codex_config_broken"
             | "queue_completion_uncertain"
             | "codex_quota"
+            | "claude_not_logged_in"
+            | "claude_not_installed"
+            | "claude_quota"
             | "not_signed_in"
             | "session_expired"
             | "network"
@@ -2081,6 +2087,7 @@ async fn draft_policy(app: AppHandle) -> Result<Policy, UiError> {
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
+    let engine = engine::resolve(&engine::choice_path(&app)?);
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir_all(&working_dir).map_err(|e| UiError::unknown(e.to_string()))?;
         let state = app.state::<AppState>();
@@ -2095,12 +2102,10 @@ async fn draft_policy(app: AppHandle) -> Result<Policy, UiError> {
             prompt: topics::policy_prompt(&refs, &existing, lang),
             schema: topics::policy_schema(),
             model: None,
-            effort: lita_codex::Effort::Quality,
+            effort: lita_engine::Effort::Quality,
             working_dir,
         };
-        let run = CodexCli::on_path()
-            .run_typed::<Policy>(&req, |_| {})
-            .map_err(fail)?;
+        let run = engine.run_typed::<Policy>(&req, |_| {}).map_err(fail)?;
         let mut policy = run.value;
         policy.topics.clear();
         Ok(policy)
@@ -2118,6 +2123,7 @@ async fn suggest_brief(app: AppHandle, article_id: String) -> Result<String, UiE
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
+    let engine = engine::resolve(&engine::choice_path(&app)?);
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir_all(&working_dir).map_err(|e| UiError::unknown(e.to_string()))?;
         let state = app.state::<AppState>();
@@ -2141,13 +2147,13 @@ async fn suggest_brief(app: AppHandle, article_id: String) -> Result<String, UiE
             prompt: topics::brief_prompt(&article.title, &policy, &refs, &existing, lang),
             schema: topics::brief_schema(),
             model: None,
-            effort: lita_codex::Effort::Quality,
+            effort: lita_engine::Effort::Quality,
             working_dir,
         };
         // Stopped by the same `cancel_generate` the editor already has.
         state.generate_cancel.store(false, Ordering::Relaxed);
         let cancel = Arc::clone(&state.generate_cancel);
-        let run = CodexCli::on_path()
+        let run = engine
             .run_typed_cancellable::<SuggestedBrief>(&req, |_| {}, cancel)
             .map_err(fail)?;
         Ok(run.value.brief.trim().to_string())
@@ -2219,6 +2225,7 @@ async fn gather_topic_cloud(app: AppHandle) -> Result<CloudView, UiError> {
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
+    let engine = engine::resolve(&engine::choice_path(&app)?);
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir_all(&working_dir).map_err(|e| UiError::unknown(e.to_string()))?;
         let state = app.state::<AppState>();
@@ -2238,12 +2245,12 @@ async fn gather_topic_cloud(app: AppHandle) -> Result<CloudView, UiError> {
             prompt: topics::cloud_prompt(&policy, &refs, &existing, lang),
             schema: topics::cloud_schema(),
             model: None,
-            effort: lita_codex::Effort::Quality,
+            effort: lita_engine::Effort::Quality,
             working_dir,
         };
         state.generate_cancel.store(false, Ordering::Relaxed);
         let cancel = Arc::clone(&state.generate_cancel);
-        let run = CodexCli::on_path()
+        let run = engine
             .run_typed_cancellable::<GatheredCloud>(&req, |_| {}, cancel)
             .map_err(fail)?;
         let material_count = material_count(&store, &articles)?;
@@ -2286,6 +2293,7 @@ async fn suggest_topics(
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
+    let engine = engine::resolve(&engine::choice_path(&app)?);
     tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir_all(&working_dir).map_err(|e| UiError::unknown(e.to_string()))?;
         let state = app.state::<AppState>();
@@ -2307,12 +2315,10 @@ async fn suggest_topics(
             ),
             schema: topics::topics_schema(),
             model: None,
-            effort: lita_codex::Effort::Quality,
+            effort: lita_engine::Effort::Quality,
             working_dir,
         };
-        let run = CodexCli::on_path()
-            .run_typed::<Topics>(&req, |_| {})
-            .map_err(fail)?;
+        let run = engine.run_typed::<Topics>(&req, |_| {}).map_err(fail)?;
         Ok(topics::dedupe(run.value.topics, &existing, N))
     })
     .await
@@ -2422,6 +2428,7 @@ fn run_queue(app: &AppHandle) -> Result<(), UiError> {
         .path()
         .app_data_dir()
         .map_err(|e| UiError::unknown(e.to_string()))?;
+    let choice_path = engine::choice_path(app)?;
     let mut first = true;
     loop {
         let token = state.access_token()?;
@@ -2493,28 +2500,10 @@ fn run_queue(app: &AppHandle) -> Result<(), UiError> {
         else {
             return Ok(());
         };
-        // Codex problems hit every article alike: say so once and stop.
-        match CodexCli::on_path().preflight().map_err(fail)? {
-            Preflight::Ready { .. } => {}
-            Preflight::NotInstalled => {
-                return Err(UiError {
-                    code: "codex_not_installed",
-                    detail: String::new(),
-                });
-            }
-            Preflight::NotLoggedIn { .. } => {
-                return Err(UiError {
-                    code: "codex_not_logged_in",
-                    detail: String::new(),
-                });
-            }
-            Preflight::ConfigBroken { detail, .. } => {
-                return Err(UiError {
-                    code: "codex_config_broken",
-                    detail,
-                });
-            }
-        }
+        // The chosen engine's problems hit every article alike: say so once
+        // and stop. The choice is read again for each article, and the
+        // engine checked here is the one that writes it.
+        let engine = engine::resolve_for_queue(&choice_path, |engine| engine.preflight())?;
         let profile_store = store.for_profile(&next.profile_id).map_err(fail)?;
         let id = QueueJobId::new(&next.profile_id, &next.id);
         let start_outcome = {
@@ -2633,6 +2622,7 @@ fn run_queue(app: &AppHandle) -> Result<(), UiError> {
         let result = write_article(
             ArticleWriteContext {
                 app,
+                engine: &engine,
                 token,
                 profile_id: &next.profile_id,
                 cancel,
@@ -3245,7 +3235,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            codex_status,
+            engine_status,
+            select_engine,
             session_status,
             list_profiles,
             selected_profile,

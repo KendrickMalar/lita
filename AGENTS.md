@@ -1,7 +1,8 @@
 # Lita — agent instructions
 
 Lita is a local-first desktop app that drives the user's already-authenticated
-Codex CLI to write publishing-ready posts in the user's own voice.
+Codex CLI or Claude Code (whichever one the user chose) to write
+publishing-ready posts in the user's own voice.
 
 ## Source of truth
 
@@ -49,9 +50,13 @@ ready to merge. Releases and merges stay with the coordinator.
 
 ## Non-negotiable constraints
 
-1. **Never read, store, copy, or refresh the user's Codex/OpenAI credentials.**
-   Lita spawns the `codex` binary and lets it handle its own auth. Reading
-   `~/.codex/auth.json` is out of bounds.
+1. **Never read, store, copy, or refresh the user's Codex/OpenAI or
+   Claude/Anthropic credentials.** Lita spawns the `codex` or `claude` binary
+   and lets it handle its own auth. Reading `~/.codex/auth.json`, the Claude
+   Code auth files under `~/.claude`, any OS keychain entry of either CLI, or
+   any token is out of bounds. `claude auth status` is read for `loggedIn`
+   only: never put the email address or organisation name it prints into a
+   log, a report, or a test expectation.
 2. **Never commit user content or secrets.** `*.sqlite`, `auth.json`, and `.env`
    are gitignored; keep it that way.
 3. **Local-first.** No Lita-operated server, no telemetry, no account system.
@@ -59,6 +64,26 @@ ready to merge. Releases and merges stay with the coordinator.
    approve → copy. Anything else goes in the backlog. Slack was deliberately
    cut from v0.1 — see `docs/pm/2026-09-22-slack-scopes.md` before proposing it
    back.
+
+## Choosing the generation engine
+
+Lita can write with Codex CLI or with Claude Code. Exactly one is used at a
+time, and the user picks it.
+
+- The user chooses Codex or Claude Code in the account menu at the bottom left.
+- The choice is stored on this machine only, in `app_config_dir()/engine.json`
+  as `{"version":1,"engine":"codex"|"claude"}`. A missing file, a broken file,
+  or an unknown value means Codex. It is never stored in Supabase.
+- Each generation reads the choice when it starts and runs on that engine to
+  the end. The queue re-reads it for every article. Building a Voice (several
+  steps) decides once, at its start.
+- Lita does not fall back to the other engine automatically, and never suggests
+  switching. If the chosen engine cannot run, the run stops with an error.
+- Error codes: Codex keeps today's `codex_*` codes. Claude Code uses
+  `claude_not_installed`, `claude_not_logged_in`, `claude_quota`,
+  `claude_schema` and `claude_failed`. `cancelled` is shared.
+- Tauri commands: `engine_status` (replaces `codex_status`) and
+  `select_engine`. `Engine` in `crates/lita-engine` wraps both CLIs.
 
 ## Calling Codex from Lita
 
@@ -85,10 +110,59 @@ with the prompt on stdin. Notes:
 
 Reference: https://developers.openai.com/codex/cli/reference
 
+## Calling Claude Code from Lita
+
+The invocation shape:
+
+```
+claude -p \
+  --output-format json \
+  --json-schema <schema JSON string> \
+  --tools "" \
+  --setting-sources "" \
+  --strict-mcp-config \
+  --disable-slash-commands \
+  --no-session-persistence \
+  --effort <low|medium|high>
+```
+
+with the prompt on stdin. Notes:
+
+- The working directory is Lita's data directory, which is not a git repo.
+- `--setting-sources ""` keeps the user's CLAUDE.md, hooks and plugins out of
+  the run, so Lita's output does not depend on them. Measured on 2.1.296: 3,270
+  input tokens with it, 13,418 without.
+- Do not use `--bare`. It skips OAuth and the keychain, so a user who logged
+  in with claude.ai could not run anything. Never add it.
+- `--tools ""` turns off every tool. Writing needs none, and a non-interactive
+  run cannot answer permission prompts.
+- `--strict-mcp-config` ignores MCP servers from any config but `--mcp-config`
+  (Lita passes none), and `--disable-slash-commands` disables all skills.
+- `--no-session-persistence` keeps drafts out of the user's session history.
+- `--effort` follows the same mapping as Codex: Fast is `low`, Quality is
+  `medium`, Best is `high`.
+- No `--model` by default (the CLI's default model). `--model` is added only
+  when `Request.model` is `Some`.
+- No environment variable is added or removed; auth is left to `claude`.
+- Stdout is one JSON result (`type: "result"`). Read the value from
+  `structured_output`. A run failed if the exit code is not 0 or `is_error` is
+  `true`.
+- Status is `claude --version` (not found: not installed; any other failure to
+  start is an error) and `claude auth status --json`, of which only `loggedIn`
+  is read.
+- Cancel: the child starts in its own process group and the whole group is
+  stopped, so nothing it started is left running.
+
+Reference: `docs/spec/143-basic-design.md`, chapter 3.
+
 ## Layout
 
 ```
-crates/lita-codex/   drives the Codex CLI; owns VoiceProfile (src/voice.rs)
+crates/lita-engine/  drives the generation engines; owns VoiceProfile (src/voice.rs)
+  codex.rs           Codex CLI
+  claude.rs          Claude Code
+  engine.rs          EngineKind and Engine (one of the two)
+  choice.rs          the engine choice saved on this machine (engine.json)
 src-tauri/           Tauri shell — #[tauri::command]s only, logic lives in crates/
 src/                 React + TypeScript frontend (Vite)
 src/platform/        the ONLY place that imports @tauri-apps/* (tauri.ts); mock.ts is the browser stand-in

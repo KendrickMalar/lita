@@ -2,9 +2,9 @@
 //! prints the title, the length and the first lines. Uses about a minute
 //! of the account's Codex quota.
 
-use lita_codex::post::{PlatformRules, PostDraft, generation_prompt, post_schema};
-use lita_codex::voice::VoiceProfile;
-use lita_codex::{CodexCli, Effort, Request};
+use lita_engine::post::{PlatformRules, PostDraft, generation_prompt, post_schema};
+use lita_engine::voice::VoiceProfile;
+use lita_engine::{CodexCli, Effort, Request};
 
 fn main() -> anyhow::Result<()> {
     let profile = VoiceProfile {

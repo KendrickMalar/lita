@@ -9,7 +9,7 @@ const SLOW_LAUNCH_MS = 3000;
 // sign-in screen also carries, and one sentence saying what is being waited
 // on. The only movement is the mint dot of the wordmark, and it stops under
 // `prefers-reduced-motion`. A wait past three seconds adds one quiet line.
-export function Launch({ step }: { step: "session" | "codex" }) {
+export function Launch({ step }: { step: "session" | "engine" }) {
   return (
     <div className="launch">
       <div className="launch-stage">
@@ -17,7 +17,7 @@ export function Launch({ step }: { step: "session" | "codex" }) {
           Lita<span className="dot" aria-hidden="true">.</span>
         </p>
         <p className="launch-tag">{t("app.tagline")}</p>
-        <p className="launch-line" role="status">{t(step === "session" ? "session.checking" : "codex.checking")}</p>
+        <p className="launch-line" role="status">{t(step === "session" ? "session.checking" : "engine.checkingAny")}</p>
         {/* The slot keeps its height from the first paint, so nothing on
             screen moves when the slow line arrives. */}
         <div className="launch-slot">

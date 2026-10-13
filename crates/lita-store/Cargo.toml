@@ -8,7 +8,7 @@ repository.workspace = true
 
 [dependencies]
 anyhow = "1"
-lita-codex = { path = "../lita-codex" }
+lita-engine = { path = "../lita-engine" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

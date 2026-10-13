@@ -147,8 +147,9 @@ with the prompt on stdin. Notes:
 - Stdout is one JSON result (`type: "result"`). Read the value from
   `structured_output`. A run failed if the exit code is not 0 or `is_error` is
   `true`.
-- Status is `claude --version` (cannot start: not installed) and
-  `claude auth status --json`, of which only `loggedIn` is read.
+- Status is `claude --version` (not found: not installed; any other failure to
+  start is an error) and `claude auth status --json`, of which only `loggedIn`
+  is read.
 - Cancel: the child starts in its own process group and the whole group is
   stopped, so nothing it started is left running.
 

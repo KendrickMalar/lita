@@ -26,7 +26,7 @@ use serde_json::Value;
 pub use choice::{load_choice, save_choice};
 pub use claude::ClaudeCli;
 pub use codex::{CodexCli, TurnFailure};
-pub use engine::EngineKind;
+pub use engine::{Engine, EngineKind};
 
 /// How many trailing bytes of stderr to keep for diagnostics.
 pub(crate) const STDERR_TAIL_BYTES: usize = 4096;

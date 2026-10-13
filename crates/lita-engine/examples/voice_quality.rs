@@ -8,7 +8,7 @@
 
 use lita_engine::post::{generation_prompt, post_schema, PlatformRules, PostDraft};
 use lita_engine::voice::{pipeline, select_material, Budget, Confidence, VoiceProfile};
-use lita_engine::{CodexCli, Effort, Request};
+use lita_engine::{Effort, Engine, EngineKind, Request};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
     let pieces: Vec<String> = files.iter().map(|f| std::fs::read_to_string(f).unwrap_or_default()).filter(|s| !s.trim().is_empty()).collect();
     let refs: Vec<&str> = pieces.iter().map(String::as_str).collect();
     eprintln!("material: {} pieces, {} chars", pieces.len(), pieces.iter().map(|p| p.chars().count()).sum::<usize>());
-    let cli = CodexCli::on_path();
+    let cli = Engine::on_path(EngineKind::Codex);
     let wd = std::env::temp_dir();
 
     // Old way.

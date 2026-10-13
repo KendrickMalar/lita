@@ -1,6 +1,6 @@
 # Lita
 
-**Lita writes your posts, in your voice — using the Codex login you already have.**
+**Lita writes your posts, in your voice — using the Codex or Claude Code login you already have.**
 
 Lita is a desktop app for people who publish. It is made of three things: your
 **Voices** (how you write, learned from your own writing), your **articles**,
@@ -8,8 +8,9 @@ and an **editor** where Lita writes from a one-line brief and you fix what you
 want. Drafts sound like you, not like a chatbot.
 
 It does not ask you for an API key. It drives the [OpenAI Codex
-CLI](https://developers.openai.com/codex/cli) you already signed into, so your
-ChatGPT login stays where it is and Lita never touches your credentials.
+CLI](https://developers.openai.com/codex/cli) or Claude Code that you already
+signed into (you choose one), so your login stays where it is and Lita never
+touches your credentials.
 
 > **Status: v0.2, in daily use by the author.** Articles, an editor with
 > autosave and version history, long-form for note and Medium, and one or
@@ -35,7 +36,7 @@ scraped ones, because nothing you dislike gets in.
 ```
 Your public writing ──▶ Voice(s) ──┐
 (note, Medium, X archive,          │
- or paste / a text file)           ├──▶ Codex CLI ──▶ article text ──▶ you edit ──▶ copy
+ or paste / a text file)           ├──▶ Codex CLI or Claude Code ──▶ article text ──▶ you edit ──▶ copy
                                    │        (every run and edit kept as a version)
 Brief, in the editor ──────────────┘
 ("what, for whom, what to take away")
@@ -44,17 +45,17 @@ Brief, in the editor ──────────────┘
 1. **Point it at your writing.** Enter your note or Medium account and it pulls
    your public articles; drop in your X archive (`tweets.js`); or paste text.
    Pick the pieces you are happy with.
-2. **Build a Voice.** Codex distils formality, tone, sentence endings, the
-   words that are yours, and how you open and close, into a profile you can
-   read and edit line by line. It also writes one sentence about your writing
-   for the top of the screen.
+2. **Build a Voice.** The engine you chose distils formality, tone, sentence
+   endings, the words that are yours, and how you open and close, into a
+   profile you can read and edit line by line. It also writes one sentence
+   about your writing for the top of the screen.
 3. **Open an article.** The home screen lists what you have written. A new
    article opens the editor: your text on the left, Lita on the right.
 4. **Write a brief and let Lita write.** A sentence or two: what to say, to
-   whom, what they should take away. Lita runs `codex exec` with a JSON schema
-   and writes into the article: a post for X, or a titled, paragraphed piece
-   for note or Medium. You see the exact prompt first, choose fast or careful,
-   and can stop a run.
+   whom, what they should take away. Lita runs `codex exec` or `claude -p` with
+   a JSON schema and writes into the article: a post for X, or a titled,
+   paragraphed piece for note or Medium. You see the exact prompt first, choose
+   fast or careful, and can stop a run.
 5. **Edit and keep.** Everything you type is saved as you go. Each generation,
    rewrite and restore is a version you can go back to. Copy when it is right.
 6. **Tune the Voice.** Fix Lita's one-line reading of your writing, or any
@@ -63,11 +64,11 @@ Brief, in the editor ──────────────┘
 
 ## Design principles
 
-- **Borrowed auth.** Lita spawns the Codex CLI as a subprocess. It never reads,
-  stores, or refreshes your OpenAI tokens.
+- **Borrowed auth.** Lita spawns the Codex CLI or Claude Code as a subprocess.
+  It never reads, stores, or refreshes your OpenAI or Anthropic tokens.
 - **Honest about the network.** Before writing, the app shows you exactly what
-  will be sent to Codex: the structured Voice and your brief, never your
-  original excerpts.
+  will be sent to the engine you chose: the structured Voice and your brief,
+  never your original excerpts.
 - **The Voice is a document, not a black box.** Every field is visible and
   editable in the app.
 - **Your data follows your login.** Voices, briefs and drafts are stored under
@@ -81,8 +82,13 @@ Brief, in the editor ──────────────┘
 ## Requirements
 
 - macOS (Windows and Linux are untested)
-- [Codex CLI](https://developers.openai.com/codex/cli) installed and logged in
-  (`codex login`)
+- One of these, installed and logged in:
+  - [Codex CLI](https://developers.openai.com/codex/cli) (`codex login`)
+  - Claude Code (`claude auth login`;
+    [install](https://code.claude.com/docs/en/setup))
+
+  You pick which one Lita uses in the account menu at the bottom left. Until
+  you pick, Lita uses Codex. Claude Code is never used unless you choose it.
 - A Google account, for signing in to Lita
 
 ## Installing
@@ -119,7 +125,7 @@ The repository is a Cargo workspace:
 
 | Path | What |
 | --- | --- |
-| `crates/lita-codex` | drives the Codex CLI; owns the Voice profile and the prompts |
+| `crates/lita-engine` | drives the Codex CLI and Claude Code; owns the Voice profile and the prompts |
 | `crates/lita-sources` | note, Medium and X archive import |
 | `crates/lita-auth` | Google sign-in through Supabase, session in the OS keychain |
 | `crates/lita-store` | data access through PostgREST with the user's token |

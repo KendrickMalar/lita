@@ -13,13 +13,13 @@ use std::time::{Duration, Instant};
 use errors::UiError;
 
 use lita_auth::{Session, SessionStore, SupabaseAuth};
-use lita_codex::post::{PlatformRules, PostDraft, generation_prompt, post_schema};
-use lita_codex::presets;
-use lita_codex::topics::{
+use lita_engine::post::{PlatformRules, PostDraft, generation_prompt, post_schema};
+use lita_engine::presets;
+use lita_engine::topics::{
     self, ArticleText, Existing, GatheredCloud, Lang, Policy, SuggestedBrief, TopicCloud, Topics,
 };
-use lita_codex::voice::{VoiceProfile, pipeline};
-use lita_codex::{CodexCli, Preflight, Request};
+use lita_engine::voice::{VoiceProfile, pipeline};
+use lita_engine::{Engine, EngineKind, Preflight, Request};
 use lita_sources::Piece;
 use lita_store::{
     Article, ArticlePatch, ArticleStatus, ArticleSummary, ArticleVersion, NewArticle, NewSource,
@@ -643,7 +643,7 @@ fn fail(e: anyhow::Error) -> UiError {
 /// second and the window must not freeze while it does.
 #[tauri::command]
 async fn codex_status() -> CodexStatus {
-    let result = tauri::async_runtime::spawn_blocking(|| CodexCli::on_path().preflight()).await;
+    let result = tauri::async_runtime::spawn_blocking(|| Engine::on_path(EngineKind::Codex).preflight()).await;
     match result {
         Ok(Ok(preflight)) => preflight.into(),
         Ok(Err(e)) => CodexStatus::Error {
@@ -987,7 +987,7 @@ fn extract_profile(
     let bodies: Vec<&str> = sources.iter().map(|s| s.body.as_str()).collect();
     let emitter = app.clone();
     let outcome = pipeline::extract(
-        &CodexCli::on_path(),
+        &Engine::on_path(EngineKind::Codex),
         &bodies,
         &pipeline::Config::default(),
         working_dir,
@@ -1320,13 +1320,13 @@ pub struct DraftView {
 /// One place decides between a fresh draft and a shorter rewrite (#40), so
 /// the preview and the run can never disagree.
 fn prompt_for(
-    profile: &lita_codex::voice::VoiceProfile,
+    profile: &lita_engine::voice::VoiceProfile,
     brief: &str,
-    rules: &lita_codex::post::PlatformRules,
+    rules: &lita_engine::post::PlatformRules,
     previous: Option<&str>,
 ) -> String {
     match previous.map(str::trim).filter(|p| !p.is_empty()) {
-        Some(prev) => lita_codex::post::shorten_prompt(profile, brief, rules, prev),
+        Some(prev) => lita_engine::post::shorten_prompt(profile, brief, rules, prev),
         None => generation_prompt(profile, brief, rules),
     }
 }
@@ -1609,7 +1609,7 @@ fn write_article(
         effort: effort.into(),
         working_dir,
     };
-    let run = CodexCli::on_path()
+    let run = Engine::on_path(EngineKind::Codex)
         .run_typed_cancellable::<PostDraft>(&req, |_| {}, Arc::clone(&cancel))
         .map_err(fail)?;
 
@@ -2095,10 +2095,10 @@ async fn draft_policy(app: AppHandle) -> Result<Policy, UiError> {
             prompt: topics::policy_prompt(&refs, &existing, lang),
             schema: topics::policy_schema(),
             model: None,
-            effort: lita_codex::Effort::Quality,
+            effort: lita_engine::Effort::Quality,
             working_dir,
         };
-        let run = CodexCli::on_path()
+        let run = Engine::on_path(EngineKind::Codex)
             .run_typed::<Policy>(&req, |_| {})
             .map_err(fail)?;
         let mut policy = run.value;
@@ -2141,13 +2141,13 @@ async fn suggest_brief(app: AppHandle, article_id: String) -> Result<String, UiE
             prompt: topics::brief_prompt(&article.title, &policy, &refs, &existing, lang),
             schema: topics::brief_schema(),
             model: None,
-            effort: lita_codex::Effort::Quality,
+            effort: lita_engine::Effort::Quality,
             working_dir,
         };
         // Stopped by the same `cancel_generate` the editor already has.
         state.generate_cancel.store(false, Ordering::Relaxed);
         let cancel = Arc::clone(&state.generate_cancel);
-        let run = CodexCli::on_path()
+        let run = Engine::on_path(EngineKind::Codex)
             .run_typed_cancellable::<SuggestedBrief>(&req, |_| {}, cancel)
             .map_err(fail)?;
         Ok(run.value.brief.trim().to_string())
@@ -2238,12 +2238,12 @@ async fn gather_topic_cloud(app: AppHandle) -> Result<CloudView, UiError> {
             prompt: topics::cloud_prompt(&policy, &refs, &existing, lang),
             schema: topics::cloud_schema(),
             model: None,
-            effort: lita_codex::Effort::Quality,
+            effort: lita_engine::Effort::Quality,
             working_dir,
         };
         state.generate_cancel.store(false, Ordering::Relaxed);
         let cancel = Arc::clone(&state.generate_cancel);
-        let run = CodexCli::on_path()
+        let run = Engine::on_path(EngineKind::Codex)
             .run_typed_cancellable::<GatheredCloud>(&req, |_| {}, cancel)
             .map_err(fail)?;
         let material_count = material_count(&store, &articles)?;
@@ -2307,10 +2307,10 @@ async fn suggest_topics(
             ),
             schema: topics::topics_schema(),
             model: None,
-            effort: lita_codex::Effort::Quality,
+            effort: lita_engine::Effort::Quality,
             working_dir,
         };
-        let run = CodexCli::on_path()
+        let run = Engine::on_path(EngineKind::Codex)
             .run_typed::<Topics>(&req, |_| {})
             .map_err(fail)?;
         Ok(topics::dedupe(run.value.topics, &existing, N))
@@ -2494,7 +2494,7 @@ fn run_queue(app: &AppHandle) -> Result<(), UiError> {
             return Ok(());
         };
         // Codex problems hit every article alike: say so once and stop.
-        match CodexCli::on_path().preflight().map_err(fail)? {
+        match Engine::on_path(EngineKind::Codex).preflight().map_err(fail)? {
             Preflight::Ready { .. } => {}
             Preflight::NotInstalled => {
                 return Err(UiError {

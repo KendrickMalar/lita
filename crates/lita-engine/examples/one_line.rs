@@ -2,8 +2,8 @@
 //! `one_line`, to check what Codex writes for the top of the Voice screen.
 //! Uses the account's Codex quota (about a minute).
 
-use lita_codex::{CodexCli, Effort, Request};
-use lita_codex::voice::VoiceProfile;
+use lita_engine::{CodexCli, Effort, Request};
+use lita_engine::voice::VoiceProfile;
 
 fn main() -> anyhow::Result<()> {
     let samples = [

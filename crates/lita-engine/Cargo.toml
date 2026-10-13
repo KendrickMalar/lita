@@ -1,7 +1,7 @@
 [package]
-name = "lita-codex"
+name = "lita-engine"
 version = "0.0.0"
-description = "Drives the user's Codex CLI to produce structured text for Lita."
+description = "Drives the user's Codex and Claude Code CLIs to produce structured text for Lita."
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

@@ -2,9 +2,9 @@
 //!
 //! Points Codex at an empty CODEX_HOME so there are no credentials, then
 //! asks for a run. Expected: `FailureKind::NotLoggedIn` within milliseconds,
-//! before `codex exec` is spawned. Run with `cargo run -p lita-codex --example nologin`.
+//! before `codex exec` is spawned. Run with `cargo run -p lita-engine --example nologin`.
 
-use lita_codex::{CodexCli, FailureKind, Request, RunFailure};
+use lita_engine::{CodexCli, FailureKind, Request, RunFailure};
 use std::time::Instant;
 
 fn main() {

@@ -1,8 +1,8 @@
 //! Tries the title suggestion and the policy draft on real articles:
-//! `cargo run -p lita-codex --example topics_trial -- <dir of .md> [direction]`
+//! `cargo run -p lita-engine --example topics_trial -- <dir of .md> [direction]`
 
-use lita_codex::topics::{self, Existing, Lang, Policy, Topics};
-use lita_codex::{CodexCli, Effort, Request};
+use lita_engine::topics::{self, Existing, Lang, Policy, Topics};
+use lita_engine::{CodexCli, Effort, Request};
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);

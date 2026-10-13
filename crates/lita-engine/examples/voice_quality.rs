@@ -3,12 +3,12 @@
 //! same material, prints the numbers that show whether rigour went up, and
 //! writes one article per voice with the answer key kept apart.
 //!
-//! `cargo run -p lita-codex --example voice_quality -- <material dir> <out dir> "<brief>"`
+//! `cargo run -p lita-engine --example voice_quality -- <material dir> <out dir> "<brief>"`
 //! Uses the account's Codex quota (several minutes).
 
-use lita_codex::post::{generation_prompt, post_schema, PlatformRules, PostDraft};
-use lita_codex::voice::{pipeline, select_material, Budget, Confidence, VoiceProfile};
-use lita_codex::{CodexCli, Effort, Request};
+use lita_engine::post::{generation_prompt, post_schema, PlatformRules, PostDraft};
+use lita_engine::voice::{pipeline, select_material, Budget, Confidence, VoiceProfile};
+use lita_engine::{CodexCli, Effort, Request};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -43,7 +43,7 @@ fn main() -> anyhow::Result<()> {
     let r = &outcome.report;
     eprintln!("new: {}s  words={:?}", r.total_secs, new.preferred_words);
 
-    let stops: Vec<&String> = new.preferred_words.iter().filter(|w| lita_codex::voice::stoplist::is_stop(w)).collect();
+    let stops: Vec<&String> = new.preferred_words.iter().filter(|w| lita_engine::voice::stoplist::is_stop(w)).collect();
     let lows = new.backing.values().filter(|b| b.confidence == Confidence::Low).count();
     let with_evidence = new.backing.values().filter(|b| !b.evidence.is_empty()).count();
     println!("== numbers ==");

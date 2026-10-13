@@ -1,7 +1,7 @@
 //! Tries the topic cloud on real articles:
-//! `cargo run -p lita-codex --example cloud_trial -- <dir of .md>`
-use lita_codex::topics::{self, Existing, GatheredCloud, Lang, Policy};
-use lita_codex::{CodexCli, Effort, Request};
+//! `cargo run -p lita-engine --example cloud_trial -- <dir of .md>`
+use lita_engine::topics::{self, Existing, GatheredCloud, Lang, Policy};
+use lita_engine::{CodexCli, Effort, Request};
 
 fn main() -> anyhow::Result<()> {
     let dir = std::path::PathBuf::from(std::env::args().nth(1).expect("dir"));

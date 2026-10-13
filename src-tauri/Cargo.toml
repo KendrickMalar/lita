@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 lita-auth = { path = "../crates/lita-auth" }
-lita-codex = { path = "../crates/lita-codex" }
+lita-engine = { path = "../crates/lita-engine" }
 lita-sources = { path = "../crates/lita-sources" }
 lita-store = { path = "../crates/lita-store" }
 anyhow = "1"

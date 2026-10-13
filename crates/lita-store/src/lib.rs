@@ -7,9 +7,9 @@
 //! construction, only that person's rows.
 
 use anyhow::{Context, Result, bail};
-use lita_codex::Effort;
-pub use lita_codex::topics::{ArticleText, Policy, TopicCloud};
-use lita_codex::voice::VoiceProfile;
+use lita_engine::Effort;
+pub use lita_engine::topics::{ArticleText, Policy, TopicCloud};
+use lita_engine::voice::VoiceProfile;
 use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderValue};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -94,7 +94,7 @@ pub struct NewSource {
 }
 
 /// `Effort` as the database spells it. Kept separate from
-/// `lita_codex::Effort` so the CLI mapping ("low"/"medium") and the storage
+/// `lita_engine::Effort` so the CLI mapping ("low"/"medium") and the storage
 /// mapping ("fast"/"quality") can drift independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1281,10 +1281,10 @@ fn sort_queue_articles(articles: &mut [Article]) {
 
 fn cmp_timestamp(left: &str, right: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    let Some(left_seconds) = lita_codex::topics::epoch_seconds(left) else {
+    let Some(left_seconds) = lita_engine::topics::epoch_seconds(left) else {
         return left.cmp(right);
     };
-    let Some(right_seconds) = lita_codex::topics::epoch_seconds(right) else {
+    let Some(right_seconds) = lita_engine::topics::epoch_seconds(right) else {
         return left.cmp(right);
     };
     match left_seconds.cmp(&right_seconds) {

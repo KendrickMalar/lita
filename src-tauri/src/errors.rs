@@ -2,7 +2,7 @@
 //! sentence in the person's language, plus the raw `detail` for a
 //! "show details" disclosure. Never the only thing shown (R-5).
 
-use lita_codex::{FailureKind, RunFailure};
+use lita_engine::{FailureKind, RunFailure};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]

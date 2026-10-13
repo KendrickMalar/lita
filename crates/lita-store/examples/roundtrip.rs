@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result, ensure};
 use lita_auth::SupabaseAuth;
-use lita_codex::voice::{Excerpt, VoiceProfile};
+use lita_engine::voice::{Excerpt, VoiceProfile};
 use lita_store::{
     ArticlePatch, ArticleStatus, NewArticle, NewSource, NewVersion, SourceKind, Store, VersionKind,
     is_permission_denied,

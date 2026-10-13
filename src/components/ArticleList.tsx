@@ -15,12 +15,13 @@ type Props = {
   // The sidebar's 「題から書く」 steps back while this screen carries its own
   // main button, so only one of them is mint at a time (D-68, principle 3).
   onMainPrimary: (v: boolean) => void;
-  onShowCodexSteps: () => void;
+  onShowEngineSteps: () => void;
 };
 // When the whole queue stops, the sentence says what to do next, not what
 // went wrong: the sidebar already carries the cause.
 const STOPPED: Record<string, MessageKey> = {
   codex_not_logged_in: "queue.stopped.codex_not_logged_in",
+  claude_not_logged_in: "queue.stopped.claude_not_logged_in",
   not_signed_in: "queue.stopped.not_signed_in",
   session_expired: "queue.stopped.session_expired",
   network: "queue.stopped.network",
@@ -28,7 +29,7 @@ const STOPPED: Record<string, MessageKey> = {
 
 // The home screen: what has been written, newest first. Nothing on it is a
 // number for its own sake; dates and destinations only.
-export function ArticleList({ profileId, filter, onOpen, onGoVoices, onGoTopics, onMainPrimary, onShowCodexSteps }: Props) {
+export function ArticleList({ profileId, filter, onOpen, onGoVoices, onGoTopics, onMainPrimary, onShowEngineSteps }: Props) {
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [q, setQ] = useState("");
   const [stopped, setStopped] = useState<UiError | null>(null);
@@ -103,7 +104,7 @@ export function ArticleList({ profileId, filter, onOpen, onGoVoices, onGoTopics,
       {stopped && (
         <p className="notice" role="status">
           {t(STOPPED[stopped.code] ?? "queue.stopped")}
-          {stopped.code === "codex_not_logged_in" && <button className="link" onClick={onShowCodexSteps}>{t("action.seeSteps")}</button>}
+          {(stopped.code === "codex_not_logged_in" || stopped.code === "claude_not_logged_in") && <button className="link" onClick={onShowEngineSteps}>{t("action.seeSteps")}</button>}
         </p>
       )}
       {/* While it is stopped, one sentence is enough; the rows still say

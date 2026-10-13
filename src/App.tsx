@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { forgetAll } from "./hooks/useQuietLoad";
 import { SIGN_IN_AGAIN } from "./components/ErrorNote";
-import { host, type CodexStatus, type SessionStatus, type UiError } from "./platform/host";
+import { host, type EngineKind, type EngineStatus, type EnginesStatus, type SessionStatus, type UiError } from "./platform/host";
+import { mockScene } from "./platform/mock";
 import type { PublishingProfile } from "./platform/types";
 import { asUiError } from "./errors";
 import { t } from "./i18n";
+import { CLAUDE_INSTALL_URL, ENGINE_NAMES, EngineContext } from "./engine";
 import { ErrorNote } from "./components/ErrorNote";
 import { TopBar } from "./components/TopBar";
 import { Shell } from "./components/Shell";
@@ -15,12 +17,20 @@ import "./App.css";
 
 const CODEX_INSTALL_URL = "https://developers.openai.com/codex/cli";
 
-type View = { kind: "checking" } | { kind: "done"; status: CodexStatus };
 type Auth = { kind: "checking" } | { kind: "waiting" } | { kind: "done"; status: SessionStatus; error?: UiError };
 
 type ProfileState = { kind: "loading" } | { kind: "error"; error: UiError } | { kind: "ready"; profiles: PublishingProfile[]; selected: PublishingProfile };
 export default function App() {
-  const [view, setView] = useState<View>({ kind: "checking" });
+  // The last known state of both engines, and which one is in use.
+  const [engines, setEngines] = useState<EnginesStatus | null>(null);
+  const [engineChecking, setEngineChecking] = useState(true);
+  // Whether the body (sidebar and pages) is open. It opens when the engine in
+  // use can write, and stays open if one that cannot is picked from inside it;
+  // the menu and the warning then say what is wrong.
+  const [bodyOpen, setBodyOpen] = useState(false);
+  // The engine-menu mock scenes start inside the body, even when the engine in
+  // use cannot write, to show the menu's way to the steps.
+  const sceneOpensBody = useRef(mockScene()?.startsWith("engine-menu") ?? false);
   const [auth, setAuth] = useState<Auth>({ kind: "checking" });
   const [profileState, setProfileState] = useState<ProfileState>({ kind: "loading" });
   const profileLoadVersion = useRef(0);
@@ -34,8 +44,8 @@ export default function App() {
       if (request === profileLoadVersion.current) setProfileState({ kind: "error", error: asUiError(e) });
     }
   }, []);
-  // Once both checks have answered, the app is up: a later re-check of Codex
-  // shows its own steps, not the launch screen again.
+  // Once both checks have answered, the app is up: a later re-check of the
+  // engine shows its own steps, not the launch screen again.
   const [booted, setBooted] = useState(false);
   const stepsRef = useRef<HTMLElement>(null);
   const updates = useUpdates();
@@ -76,10 +86,42 @@ export default function App() {
   }, []);
 
   const check = useCallback(async () => {
-    setView({ kind: "checking" });
-    try { setView({ kind: "done", status: await host.codexStatus() }); }
-    catch (e) { setView({ kind: "done", status: { status: "error", message: String(e) } }); }
+    // Read before waiting: in development StrictMode runs the first check
+    // twice, and the first to finish clears the flag, so a read after the
+    // wait would let the second one close the body the scene opened.
+    const opensBody = sceneOpensBody.current;
+    setEngineChecking(true);
+    try {
+      const next = await host.engineStatus();
+      setEngines(next);
+      setBodyOpen(next[next.selected].status === "ready" || opensBody);
+    } catch (e) {
+      // Unreadable: the engine in use (the last known one, else Codex) is
+      // "could not be checked"; the other keeps what was known of it.
+      const failed: EngineStatus = { status: "error", message: String(e) };
+      setEngines((prev) => {
+        const selected = prev?.selected ?? "codex";
+        const next: EnginesStatus = { selected, codex: prev?.codex ?? failed, claude: prev?.claude ?? failed };
+        next[selected] = failed;
+        return next;
+      });
+      setBodyOpen(false);
+    } finally {
+      sceneOpensBody.current = false;
+      setEngineChecking(false);
+    }
   }, []);
+
+  // Picking an engine saves the choice and moves the mark; the states are not
+  // read again. Resolves to the error when the choice could not be saved, and
+  // the choice stays as it was.
+  const selectEngine = useCallback(async (engine: EngineKind): Promise<UiError | null> => {
+    try { await host.selectEngine(engine); }
+    catch (e) { return asUiError(e); }
+    setEngines((prev) => (prev ? { ...prev, selected: engine } : prev));
+    if (engines?.[engine].status === "ready") setBodyOpen(true);
+    return null;
+  }, [engines]);
 
   // "サインインし直す" from any error note (#105).
   useEffect(() => {
@@ -95,7 +137,8 @@ export default function App() {
 
   const session = auth.kind === "done" ? auth.status : null;
   const signedIn = session?.status === "signed_in";
-  const codex = view.kind === "done" ? view.status : null;
+  const selected: EngineKind = engines?.selected ?? "codex";
+  const selectedStatus = engines ? engines[selected] : null;
   useEffect(() => {
     if (!signedIn) {
       profileLoadVersion.current += 1;
@@ -107,83 +150,91 @@ export default function App() {
   const onProfilesChanged = useCallback((profiles: PublishingProfile[], selected: PublishingProfile) => {
     setProfileState({ kind: "ready", profiles, selected });
   }, []);
-  const codexReady = codex?.status === "ready";
 
-  if (!booted && auth.kind === "done" && view.kind === "done") setBooted(true);
+  if (!booted && auth.kind === "done" && !engineChecking) setBooted(true);
 
-  // Nothing has been decided yet, so there is nothing to act on: one picture
-  // for the whole launch, with the line swapping as it moves on (#111).
-  if (!booted && (auth.kind === "checking" || (signedIn && view.kind === "checking"))) {
-    return <Launch step={auth.kind === "checking" ? "session" : "codex"} />;
-  }
+  const engineName = ENGINE_NAMES[selected];
+  const screen = (): ReactNode => {
+    // Nothing has been decided yet, so there is nothing to act on: one picture
+    // for the whole launch, with the line swapping as it moves on (#111).
+    if (!booted && (auth.kind === "checking" || (signedIn && engineChecking))) {
+      return <Launch step={auth.kind === "checking" ? "session" : "engine"} />;
+    }
 
-  if (signedIn && codexReady) {
-    if (profileState.kind !== "ready") {
+    if (signedIn && bodyOpen) {
+      if (profileState.kind !== "ready") {
+        return (
+          <>
+            <TopBar session={session} engines={engines} engineChecking={engineChecking} onSelectEngine={selectEngine} onSignOut={() => void signOut()} onShowEngineSteps={() => void check()} />
+            <main className="shell">
+              {profileState.kind === "loading" ? (
+                <p className="muted" role="status">{t("profile.loading")}</p>
+              ) : (
+                <section className="panel">
+                  <ErrorNote error={profileState.error} />
+                  <button className="btn pri" onClick={() => void loadProfiles()}>{t("action.retry")}</button>
+                </section>
+              )}
+            </main>
+            {updateDialog}
+          </>
+        );
+      }
       return (
         <>
-          <TopBar session={session} codex={codex} codexChecking={view.kind === "checking"} onSignOut={() => void signOut()} onShowCodexSteps={() => stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} />
-          <main className="shell">
-            {profileState.kind === "loading" ? (
-              <p className="muted" role="status">{t("profile.loading")}</p>
-            ) : (
-              <section className="panel">
-                <ErrorNote error={profileState.error} />
-                <button className="btn pri" onClick={() => void loadProfiles()}>{t("action.retry")}</button>
-              </section>
-            )}
-          </main>
+          <Shell
+            session={session}
+            engines={engines}
+            engineChecking={engineChecking}
+            onSelectEngine={selectEngine}
+            onSignOut={() => void signOut()}
+            onShowEngineSteps={() => void check()}
+            updateAvailable={updates.available}
+            onUpdate={() => void updates.checkUpdate(true)}
+            profiles={profileState.profiles}
+            selectedProfile={profileState.selected}
+            onProfilesChanged={onProfilesChanged}
+          />
           {updateDialog}
         </>
       );
     }
+
     return (
-      <>
-        <Shell
+      <div className="app">
+        <TopBar
           session={session}
-          codex={codex}
-          codexChecking={view.kind === "checking"}
+          engines={engines}
+          engineChecking={engineChecking}
+          onSelectEngine={selectEngine}
           onSignOut={() => void signOut()}
-          onShowCodexSteps={() => void check()}
-          updateAvailable={updates.available}
-          onUpdate={() => void updates.checkUpdate(true)}
-          profiles={profileState.profiles}
-          selectedProfile={profileState.selected}
-          onProfilesChanged={onProfilesChanged}
+          onShowEngineSteps={() => stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
         />
+        <main className="shell">
+          {!signedIn && (
+            <section className="panel">
+              <h2>Lita</h2>
+              <p className="sub">{t("app.tagline")}</p>
+              <SessionBody auth={auth} onSignIn={() => void signIn()} onCancel={() => void host.cancelSignIn()} />
+            </section>
+          )}
+
+          {signedIn && (
+            <section className="panel" ref={stepsRef}>
+              {engineChecking
+                ? <p className="muted" role="status">{t("engine.checking", { engine: engineName })}</p>
+                : <EngineSteps engine={selected} status={selectedStatus} onRetry={() => void check()} onSelect={selectEngine} />}
+            </section>
+          )}
+
+          <footer className="privacy">{t("privacy.note", { engine: engineName })}</footer>
+        </main>
         {updateDialog}
-      </>
+      </div>
     );
-  }
+  };
 
-  return (
-    <div className="app">
-      <TopBar
-        session={session}
-        codex={codex}
-        codexChecking={view.kind === "checking"}
-        onSignOut={() => void signOut()}
-        onShowCodexSteps={() => stepsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-      />
-      <main className="shell">
-        {!signedIn && (
-          <section className="panel">
-            <h2>Lita</h2>
-            <p className="sub">{t("app.tagline")}</p>
-            <SessionBody auth={auth} onSignIn={() => void signIn()} onCancel={() => void host.cancelSignIn()} />
-          </section>
-        )}
-
-        {signedIn && !codexReady && (
-          <section className="panel" ref={stepsRef}>
-            {view.kind === "checking" ? <p className="muted" role="status">{t("codex.checking")}</p> : <CodexSteps status={view.status} onRetry={() => void check()} />}
-          </section>
-        )}
-
-        <footer className="privacy">{t("privacy.note")}</footer>
-      </main>
-      {updateDialog}
-    </div>
-  );
+  return <EngineContext.Provider value={selected}>{screen()}</EngineContext.Provider>;
 }
 
 function SessionBody({ auth, onSignIn, onCancel }: { auth: Auth; onSignIn: () => void; onCancel: () => void }) {
@@ -205,10 +256,41 @@ function SessionBody({ auth, onSignIn, onCancel }: { auth: Auth; onSignIn: () =>
   );
 }
 
-function CodexSteps({ status, onRetry }: { status: CodexStatus; onRetry: () => void }) {
+// The way to fix the engine in use, and under it the one line that switches
+// to the other. Nothing says which is better, and the other one's state is not
+// shown here: the menu has it.
+function EngineSteps({ engine, status, onRetry, onSelect }: { engine: EngineKind; status: EngineStatus | null; onRetry: () => void; onSelect: (engine: EngineKind) => Promise<UiError | null> }) {
+  if (!status) return null;
+  return (
+    <>
+      {engine === "codex" ? <CodexSteps status={status} onRetry={onRetry} /> : <ClaudeSteps status={status} onRetry={onRetry} />}
+      <EngineSwitch to={engine === "codex" ? "claude" : "codex"} onSelect={onSelect} />
+    </>
+  );
+}
+
+function EngineSwitch({ to, onSelect }: { to: EngineKind; onSelect: (engine: EngineKind) => Promise<UiError | null> }) {
+  const [error, setError] = useState<UiError | null>(null);
+  const busy = useRef(false);
+  const choose = async () => {
+    if (busy.current) return;
+    busy.current = true;
+    setError(null);
+    try { setError(await onSelect(to)); }
+    finally { busy.current = false; }
+  };
+  return (
+    <div className="engine-switch">
+      <button className="link quiet-link" onClick={() => void choose()}>{t("engine.use", { engine: ENGINE_NAMES[to] })}</button>
+      {error && <ErrorNote error={error} />}
+    </div>
+  );
+}
+
+function CodexSteps({ status, onRetry }: { status: EngineStatus; onRetry: () => void }) {
   switch (status.status) {
     case "ready":
-      return <p className="ok">{t("status.codexOk")}</p>;
+      return null;
     case "not_logged_in":
       return (
         <>
@@ -224,7 +306,7 @@ function CodexSteps({ status, onRetry }: { status: CodexStatus; onRetry: () => v
           <h2>{t("codex.notInstalled")}</h2>
           <p className="muted">{t("codex.notInstalled.hint")}</p>
           <div className="row">
-            <button className="btn pri" onClick={() => void host.openExternal(CODEX_INSTALL_URL)}>{t("action.install")}</button>
+            <button className="btn pri" onClick={() => void host.openExternal(CODEX_INSTALL_URL)}>{t("codex.install")}</button>
             <button className="btn" onClick={onRetry}>{t("action.retry")}</button>
           </div>
         </>
@@ -238,6 +320,43 @@ function CodexSteps({ status, onRetry }: { status: CodexStatus; onRetry: () => v
           <button className="btn pri" onClick={onRetry}>{t("action.retry")}</button>
         </>
       );
+    case "error":
+      return (
+        <>
+          <ErrorNote error={{ code: "unknown", detail: status.message }} />
+          <button className="btn pri" onClick={onRetry}>{t("action.retry")}</button>
+        </>
+      );
+  }
+}
+
+// Claude Code has no configuration state of its own to fix here
+// ("config_broken" is Codex only), so that case reads as "could not be checked".
+function ClaudeSteps({ status, onRetry }: { status: EngineStatus; onRetry: () => void }) {
+  switch (status.status) {
+    case "ready":
+      return null;
+    case "not_logged_in":
+      return (
+        <>
+          <h2>{t("claude.notLoggedIn")}</h2>
+          <p className="muted">{t("claude.notLoggedIn.hint")}</p>
+          <pre>claude auth login</pre>
+          <button className="btn pri" onClick={onRetry}>{t("action.retry")}</button>
+        </>
+      );
+    case "not_installed":
+      return (
+        <>
+          <h2>{t("claude.notInstalled")}</h2>
+          <p className="muted">{t("claude.notInstalled.hint")}</p>
+          <div className="row">
+            <button className="btn pri" onClick={() => void host.openExternal(CLAUDE_INSTALL_URL)}>{t("claude.install")}</button>
+            <button className="btn" onClick={onRetry}>{t("action.retry")}</button>
+          </div>
+        </>
+      );
+    case "config_broken":
     case "error":
       return (
         <>

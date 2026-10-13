@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import type { CodexStatus, SessionStatus } from "../platform/host";
+import type { EngineKind, EnginesStatus, SessionStatus, UiError } from "../platform/host";
 import { t } from "../i18n";
+import { enginePill } from "../engine";
+import { EngineMenu } from "./EngineMenu";
 
 type Props = {
   session: SessionStatus | null;
-  codex: CodexStatus | null;
-  codexChecking: boolean;
+  engines: EnginesStatus | null;
+  engineChecking: boolean;
+  onSelectEngine: (engine: EngineKind) => Promise<UiError | null>;
   onSignOut: () => void;
-  onShowCodexSteps: () => void;
+  onShowEngineSteps: () => void;
 };
 
 // Quiet when everything is fine; a labelled pill only when something is not.
-export function TopBar({ session, codex, codexChecking, onSignOut, onShowCodexSteps }: Props) {
+export function TopBar({ session, engines, engineChecking, onSelectEngine, onSignOut, onShowEngineSteps }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -27,23 +30,17 @@ export function TopBar({ session, codex, codexChecking, onSignOut, onShowCodexSt
   const signedIn = session?.status === "signed_in";
   const email = signedIn && session.status === "signed_in" ? session.email ?? "" : "";
   const initial = (email[0] ?? "?").toUpperCase();
-  const codexOk = codex?.status === "ready";
-  const pill =
-    codexChecking ? t("codex.pill.checking")
-    : codex?.status === "not_logged_in" ? t("codex.pill.notLoggedIn")
-    : codex?.status === "not_installed" ? t("codex.pill.notInstalled")
-    : codex?.status === "config_broken" ? t("codex.pill.configBroken")
-    : codex?.status === "error" ? t("codex.pill.error")
-    : null;
+  const selectedEngine = engines?.selected ?? "codex";
+  const pill = enginePill(selectedEngine, engines?.[selectedEngine] ?? null, engineChecking);
 
   return (
     <header className="topbar">
       <b className="wordmark">Lita</b>
       <div className="topbar-right">
         {signedIn && pill && (
-          <span className={codexChecking ? "pill quiet" : "pill warn"}>
+          <span className={engineChecking ? "pill quiet" : "pill warn"}>
             {pill}
-            {!codexChecking && <button className="link" onClick={onShowCodexSteps}>{t("action.seeSteps")}</button>}
+            {!engineChecking && <button className="link" onClick={onShowEngineSteps}>{t("action.seeSteps")}</button>}
           </span>
         )}
         {signedIn && (
@@ -55,7 +52,13 @@ export function TopBar({ session, codex, codexChecking, onSignOut, onShowCodexSt
             {open && (
               <div className="menu" role="menu">
                 <div className="menu-meta">{email}</div>
-                <div className="menu-meta">{codexOk ? t("status.codexOk") : t("status.codexNotOk")}</div>
+                <EngineMenu
+                  engines={engines}
+                  checking={engineChecking}
+                  onSelect={onSelectEngine}
+                  onShowSteps={() => { setOpen(false); onShowEngineSteps(); }}
+                />
+                <div className="profile-separator" role="separator" />
                 <button role="menuitem" className="menu-item" onClick={() => { setOpen(false); onSignOut(); }}>{t("action.signOut")}</button>
               </div>
             )}

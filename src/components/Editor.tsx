@@ -3,6 +3,7 @@ import { host, type Article, type ArticleStatus, type Platform, type UiError, ty
 import { mockScene } from "../platform/mock";
 import { asUiError } from "../errors";
 import { t } from "../i18n";
+import { useEngineName } from "../engine";
 import { useAutosave } from "../hooks/useAutosave";
 import { ErrorNote } from "./ErrorNote";
 import { relativeDate } from "./ArticleList";
@@ -39,6 +40,7 @@ type Props = {
 
 
 export function Editor({ profileId, id, onBack, onDeleted, onGoVoices, onAdjustVoice, onRegisterFlush, profileChanging }: Props) {
+  const engineName = useEngineName();
   const [article, setArticle] = useState<Article | null>(null);
   const [text, setText] = useState<Text>({ title: "", body: "", brief: "" });
   const [platforms, setPlatforms] = useState<Platform[]>([]);
@@ -350,7 +352,7 @@ export function Editor({ profileId, id, onBack, onDeleted, onGoVoices, onAdjustV
           {error && <ErrorNote error={error} />}
 
           <details className="more" open={previewOpen} onToggle={(e) => setPreviewOpen((e.target as HTMLDetailsElement).open)}>
-            <summary>{t("write.preview")}</summary>
+            <summary>{t("write.preview", { engine: engineName })}</summary>
             <pre className="prompt">{preview ?? "…"}</pre>
           </details>
 

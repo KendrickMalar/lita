@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { host, type MaterialBudget, type SourceInput, type SourceKind, type UiError, type VoicePreset } from "../platform/host";
 import { t } from "../i18n";
+import { useEngineName } from "../engine";
 import { ErrorNote } from "./ErrorNote";
 import { mockScene } from "../platform/mock";
 import { SourceBox, connectionLabel, type Gathered } from "./SourceBox";
@@ -12,7 +13,7 @@ let nextKey = 1;
 
 const byHand = (kind: SourceKind): kind is ManualKind => kind === "paste" || kind === "file";
 
-// Mirrors lita_codex::voice::select_material so what is said matches what
+// Mirrors lita_engine::voice::select_material so what is said matches what
 // will actually be sent (R-1). Only trouble is reported; the numbers stay
 // out of the person's way unless they bite.
 function usage(pieces: Piece[], budget: MaterialBudget) {
@@ -59,6 +60,7 @@ type Props = { onBuild: (name: string, sources: SourceInput[]) => void; onPreset
 // was published (SourceBox, second, folded behind "見直す"). Either box alone
 // is enough, and there is still one primary button.
 export function VoiceIntake({ onBuild, onPreset, error, existing = [] }: Props) {
+  const engineName = useEngineName();
   const [pieces, setPieces] = useState<Piece[]>([]);
   const [review, setReview] = useState(false);
   const [budget, setBudget] = useState<MaterialBudget>({ per_piece_chars: 1500, total_chars: 20000 });
@@ -217,7 +219,7 @@ export function VoiceIntake({ onBuild, onPreset, error, existing = [] }: Props) 
         <div className="finish" role="region" aria-label={t("voice.intake.build")}>
           <div className="ready">
             {t("ready.name", { name })}
-            <span className="g">{t("privacy.note")}</span>
+            <span className="g">{t("privacy.note", { engine: engineName })}</span>
           </div>
           <button className="btn pri" disabled={use.count === 0} onClick={() => onBuild(name, selected.map(({ kind, origin, account, body }) => ({ kind, origin, account, body })))}>
             {t("voice.intake.build")}

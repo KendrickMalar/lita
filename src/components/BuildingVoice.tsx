@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { host, type VoiceProgress } from "../platform/host";
 import { t } from "../i18n";
+import { useEngineName } from "../engine";
 
 // The stages are real since 2026-09-23 (voice quality): the material is
 // measured, the voice is read out of it, then checked against the material
@@ -8,6 +9,7 @@ import { t } from "../i18n";
 const STAGES: VoiceProgress["stage"][] = ["started", "thinking", "checking", "saved"];
 
 export function BuildingVoice({ onCancel, relearn }: { onCancel: () => void; relearn?: boolean }) {
+  const engineName = useEngineName();
   const [progress, setProgress] = useState<VoiceProgress>({ stage: "started" });
 
   useEffect(() => {
@@ -36,7 +38,7 @@ export function BuildingVoice({ onCancel, relearn }: { onCancel: () => void; rel
         ))}
       </ol>
       <p className="muted small">{t("voice.building.hint")}</p>
-      <footer className="privacy">{t("privacy.note")}</footer>
+      <footer className="privacy">{t("privacy.note", { engine: engineName })}</footer>
     </div>
   );
 }

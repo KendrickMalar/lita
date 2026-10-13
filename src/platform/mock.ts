@@ -54,7 +54,22 @@
 // articles-queue-failed (one written, one not written, one waiting, and the
 // whole thing stopped), profiles-menu (two profiles, the account menu open),
 // profiles-create (two profiles, the new-profile name form open). Any scene
-// whose name contains "profiles" has a second profile. Add `&lang=en` to force English.
+// whose name contains "profiles" has a second profile.
+// The engine scenes (Codex or Claude Code writes). Every scene above has Codex
+// chosen and both engines ready, except codex-not-logged-in and
+// codex-not-installed, which change only Codex's state. The ones below start
+// with the other choices:
+// engine-menu (the body, account menu open; Codex chosen, both ready),
+// engine-menu-claude (the same; Claude Code chosen and ready),
+// engine-menu-claude-not-logged-in (the same; Claude Code chosen, not logged in:
+// the way to fix it in the menu, and the warning at the bottom left),
+// engine-menu-claude-not-installed (the same; Claude Code chosen, not installed),
+// engine-steps-claude-not-logged-in (the steps screen: Claude Code chosen, not
+// logged in, Codex ready; "Use Codex" there changes the choice and opens the body),
+// engine-steps-claude-not-installed (the same; Claude Code not installed),
+// articles-queue-stopped-claude (Claude Code chosen and ready at launch; the list
+// is the stopped one of articles-queue-failed, stopped on claude_not_logged_in).
+// Add `&lang=en` to force English.
 // `&delay=<ms>` slows every read (the lists, one article, one voice), so the
 // loading rules can be watched: under 300 ms nothing is said at all.
 
@@ -259,10 +274,32 @@ const pieces: T.Piece[] = Array.from({ length: 5 }, (_, i) => ({
 const draftBody = "資本政策の相談で最初に聞くのは、いくら欲しいかではなく、何を諦められるかだ。エクイティは返さなくていい金ではなく、時間と自由を先に売る契約なのだろうか。";
 const longBody = draftBody + "資本政策の話は、結局のところ何を諦めるかの順番を決める作業でしかないのだろうか。" + "ファイナンスの選択肢を並べる前に、まず自分が手放せないものを一つ決める。そこから逆算すると、借入か出資かの答えはほとんど決まっていると思う。それでも迷うなら、迷っている理由の方が本題ではないか。" + "ファイナンスの選択肢を並べる前に、まず自分が手放せないものを一つ決める。そこから逆算すると、借入か出資かの答えはほとんど決まっていると思う。それでも迷うなら、迷っている理由の方が本題ではないか。";
 
-const codex: T.CodexStatus =
+// The engine scenes. Plain objects and exact names only: this file is also
+// loaded with its types stripped, so nothing here may need a compiler.
+/** Which engine each engine scene starts with; every other scene starts with Codex. */
+const sceneEngine: Record<string, T.EngineKind> = {
+  "engine-menu": "codex",
+  "engine-menu-claude": "claude",
+  "engine-menu-claude-not-logged-in": "claude",
+  "engine-menu-claude-not-installed": "claude",
+  "engine-steps-claude-not-logged-in": "claude",
+  "engine-steps-claude-not-installed": "claude",
+  "articles-queue-stopped-claude": "claude",
+};
+const claudeNotLoggedInScenes = ["engine-menu-claude-not-logged-in", "engine-steps-claude-not-logged-in"];
+const claudeNotInstalledScenes = ["engine-menu-claude-not-installed", "engine-steps-claude-not-installed"];
+const queueStoppedScenes = ["articles-queue-stopped-claude"];
+
+const codex: T.EngineStatus =
   scene === "codex-not-logged-in" ? { status: "not_logged_in", version: "0.154.0" }
   : scene === "codex-not-installed" ? { status: "not_installed" }
   : { status: "ready", version: "0.154.0" };
+const claude: T.EngineStatus =
+  claudeNotLoggedInScenes.includes(scene) ? { status: "not_logged_in", version: "2.1.296" }
+  : claudeNotInstalledScenes.includes(scene) ? { status: "not_installed" }
+  : { status: "ready", version: "2.1.296" };
+/** The engine in use; `selectEngine` changes this and nothing else. */
+let mockEngine: T.EngineKind = sceneEngine[scene] ?? "codex";
 
 const session: T.SessionStatus =
   scene === "signed-out" ? { status: "signed_out" } : { status: "signed_in", email: "kuno@muumoo.online" };
@@ -315,10 +352,10 @@ if (scene.startsWith("editor")) { const a = articles.find((x) => x.id === (scene
 
 // The two article-list scenes hold still so a screenshot catches them; the
 // queue only really moves when titles are lined up in this session.
-const frozen = scene === "articles-queued" || scene === "articles-queue-failed";
+const frozen = scene === "articles-queued" || scene === "articles-queue-failed" || queueStoppedScenes.includes(scene);
 const queuedTitles = ["借入とエクイティ、どちらが高い金か", "資金繰りは月ではなく週で見る", "撤退の基準は、始める前に決める"];
 if (frozen) {
-  const failed = scene === "articles-queue-failed";
+  const failed = scene === "articles-queue-failed" || queueStoppedScenes.includes(scene);
   const states: (T.QueueState | null)[] = failed ? [null, "failed", "waiting"] : ["writing", "waiting", "waiting"];
   articles.unshift(...queuedTitles.map((title, i) => ({
     id: `q${i + 1}`, voice_id: "v1", platform_id: "note", title,
@@ -636,9 +673,10 @@ export const mockHost: T.Host = {
   },
   onQueueEvent: async (handler) => {
     queueHandlers.add(handler);
-    const timer = scene === "articles-queue-failed"
-      ? window.setTimeout(() => handler({ kind: "stopped", error: { code: "network", detail: "fetch failed: ENOTFOUND" } }), 150)
-      : undefined;
+    const stoppedError = scene === "articles-queue-failed" ? { code: "network", detail: "fetch failed: ENOTFOUND" }
+      : queueStoppedScenes.includes(scene) ? { code: "claude_not_logged_in", detail: "claude: not logged in" }
+      : null;
+    const timer = stoppedError ? window.setTimeout(() => handler({ kind: "stopped", error: stoppedError }), 150) : undefined;
     return () => { queueHandlers.delete(handler); if (timer !== undefined) window.clearTimeout(timer); };
   },
   appVersion: async () => "0.2.0",
@@ -657,8 +695,9 @@ export const mockHost: T.Host = {
   onCheckUpdate: async () => () => {},
   // The launch scenes hold one of the two checks open so a screenshot catches
   // the launch screen: "launch" waits on the sign-in, "launch-slow" waits on
-  // Codex long enough for the slow line to appear.
-  codexStatus: async () => (scene === "launch-slow" ? never<T.CodexStatus>() : codex),
+  // the engine check long enough for the slow line to appear.
+  engineStatus: async () => (scene === "launch-slow" ? never<T.EnginesStatus>() : { selected: mockEngine, codex, claude }),
+  selectEngine: async (engine) => { mockEngine = engine; },
   sessionStatus: async () => (scene === "launch" ? never<T.SessionStatus>() : session),
   signIn: () => (scene === "signing-in" ? never() : Promise.resolve<T.SessionStatus>({ status: "signed_in", email: "kuno@muumoo.online" })),
   cancelSignIn: async () => {},

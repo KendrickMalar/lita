@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { host, type ArticleStatus, type CodexStatus, type PublishingProfile, type SessionStatus, type UiError } from "../platform/host";
+import { host, type ArticleStatus, type EngineKind, type EnginesStatus, type PublishingProfile, type SessionStatus, type UiError } from "../platform/host";
 import { mockScene } from "../platform/mock";
 import { asUiError } from "../errors";
 import { Sidebar, FILTERS } from "./Sidebar";
@@ -34,10 +34,11 @@ function initialRoute(profileId: string): Route {
 
 type Props = {
   session: SessionStatus | null;
-  codex: CodexStatus | null;
-  codexChecking: boolean;
+  engines: EnginesStatus | null;
+  engineChecking: boolean;
+  onSelectEngine: (engine: EngineKind) => Promise<UiError | null>;
   onSignOut: () => void;
-  onShowCodexSteps: () => void;
+  onShowEngineSteps: () => void;
   updateAvailable: string | null;
   onUpdate: () => void;
   profiles: PublishingProfile[];
@@ -45,7 +46,7 @@ type Props = {
   onProfilesChanged: (profiles: PublishingProfile[], selected: PublishingProfile) => void;
 };
 
-export function Shell({ session, codex, codexChecking, onSignOut, onShowCodexSteps, updateAvailable, onUpdate, profiles, selectedProfile, onProfilesChanged }: Props) {
+export function Shell({ session, engines, engineChecking, onSelectEngine, onSignOut, onShowEngineSteps, updateAvailable, onUpdate, profiles, selectedProfile, onProfilesChanged }: Props) {
   const [route, setRoute] = useState<Route>(() => initialRoute(selectedProfile.id));
   const [mainPrimary, setMainPrimary] = useState(false);
   const [profileChanging, setProfileChanging] = useState(false);
@@ -114,10 +115,11 @@ export function Shell({ session, codex, codexChecking, onSignOut, onShowCodexSte
         quietNew={mainPrimary || route.kind === "topics"}
         onGoTopics={() => setRoute({ kind: "topics" })}
         session={session}
-        codex={codex}
-        codexChecking={codexChecking}
+        engines={engines}
+        engineChecking={engineChecking}
+        onSelectEngine={onSelectEngine}
         onSignOut={onSignOut}
-        onShowCodexSteps={onShowCodexSteps}
+        onShowEngineSteps={onShowEngineSteps}
         updateAvailable={updateAvailable}
         onUpdate={onUpdate}
         profiles={profiles}
@@ -129,7 +131,7 @@ export function Shell({ session, codex, codexChecking, onSignOut, onShowCodexSte
         profileError={profileError}
       />
       <main className="main" key={selectedProfile.id}>
-        {route.kind === "articles" && <ArticleList profileId={selectedProfile.id} filter={route.filter} onOpen={(id) => setRoute({ kind: "article", id })} onGoVoices={() => setRoute({ kind: "voices" })} onGoTopics={() => setRoute({ kind: "topics" })} onMainPrimary={setMainPrimary} onShowCodexSteps={onShowCodexSteps} />}
+        {route.kind === "articles" && <ArticleList profileId={selectedProfile.id} filter={route.filter} onOpen={(id) => setRoute({ kind: "article", id })} onGoVoices={() => setRoute({ kind: "voices" })} onGoTopics={() => setRoute({ kind: "topics" })} onMainPrimary={setMainPrimary} onShowEngineSteps={onShowEngineSteps} />}
         {route.kind === "topics" && <TopicPicker onBack={() => setRoute({ kind: "articles", filter: "all" })} onQueued={() => setRoute({ kind: "articles", filter: "all" })} onGoVoices={() => setRoute({ kind: "voices" })} />}
         {route.kind === "article" && <Editor key={`${selectedProfile.id}:${route.id}`} profileId={selectedProfile.id} id={route.id} onBack={() => setRoute({ kind: "articles", filter: "all" })} onDeleted={() => setRoute({ kind: "articles", filter: "all" })} onGoVoices={() => setRoute({ kind: "voices" })} onAdjustVoice={(voiceId) => setRoute({ kind: "voices", voiceId, backTo: { kind: "article", id: route.id } })} onRegisterFlush={registerEditorFlush} profileChanging={profileChanging} />}
         {route.kind === "voices" && <VoiceSection profileId={selectedProfile.id} voiceId={route.voiceId} onBackToArticle={route.backTo ? () => setRoute(route.backTo!) : undefined} />}

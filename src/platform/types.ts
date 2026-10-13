@@ -1,12 +1,17 @@
 // Types shared by every host implementation (tauri.ts, mock.ts).
 
 
-export type CodexStatus =
+/** Which CLI writes for Lita. Codex is the default. */
+export type EngineKind = "codex" | "claude";
+export type EngineStatus =
   | { status: "ready"; version: string }
   | { status: "not_logged_in"; version: string }
   | { status: "not_installed" }
+  /** Codex only: its config file cannot be read. */
   | { status: "config_broken"; version: string; message: string }
   | { status: "error"; message: string };
+/** The engine in use and the last known state of both. */
+export type EnginesStatus = { selected: EngineKind; codex: EngineStatus; claude: EngineStatus };
 
 export type SessionStatus =
   | { status: "restoring" }
@@ -183,7 +188,9 @@ export type Imported = { pieces: Piece[]; total: number | null; skipped_paid: nu
 export type Unlisten = () => void;
 
 export type Host = {
-  codexStatus: () => Promise<CodexStatus>;
+  engineStatus: () => Promise<EnginesStatus>;
+  /** Saves the choice only; the states are not read again. */
+  selectEngine: (engine: EngineKind) => Promise<void>;
   sessionStatus: () => Promise<SessionStatus>;
   signIn: () => Promise<SessionStatus>;
   listProfiles: () => Promise<PublishingProfile[]>;

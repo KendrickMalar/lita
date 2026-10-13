@@ -48,7 +48,7 @@ fn schema() -> Value {
 const CODEX_DOCTOR: &str = r#"{"codexVersion":"0.157.0","checks":{"config.load":{"status":"ok","details":{"config.toml parse":"ok"}},"auth.credentials":{"status":"ok"}}}"#;
 
 // Same shape as a real `codex exec --json` failure (401 sample measured on
-// codex-cli 0.155.1, see crates/lita-codex/src/lib.rs).
+// codex-cli 0.155.1, see crates/lita-engine/src/codex.rs).
 const CODEX_FAILED_EVENT: &str = r#"{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header"}}"#;
 
 /// Fake `codex`. `login status` exits 0, `doctor --json` prints a healthy

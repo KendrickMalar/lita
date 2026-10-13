@@ -459,6 +459,63 @@ fn codex_cancel_kills_the_run_and_reports_cancelled() {
     assert!(started.elapsed() < Duration::from_secs(20), "cancel did not stop the child");
 }
 
+/// AC004: after a cancel the Codex process itself is gone (not just the call
+/// returned). This pins the existing behaviour (the direct child is killed and
+/// reaped); it does not claim anything about processes Codex started itself.
+#[test]
+fn codex_cancel_leaves_no_codex_process_behind() {
+    let fake = Fake::new(Script {
+        // Record the pid, then become `sleep` (the pid stays the same).
+        exec_override: Some("echo $$ > \"$D/codex.pid\"\n  exec sleep 300"),
+        ..Script::default()
+    });
+    let work = tempfile::tempdir().unwrap();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let handle = {
+        let cli = fake.cli();
+        let req = request(Effort::Quality, None, work.path());
+        let cancel = Arc::clone(&cancel);
+        std::thread::spawn(move || cli.run_typed_cancellable::<Value>(&req, |_| {}, cancel))
+    };
+
+    let pid_file = fake.dir.path().join("codex.pid");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let pid: i32 = loop {
+        if let Some(pid) = fs::read_to_string(&pid_file).ok().and_then(|t| t.trim().parse().ok()) {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "the fake codex never wrote its pid");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let alive = |pid: i32| {
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(r#"kill -0 "$0" 2>/dev/null"#)
+            .arg(pid.to_string())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    };
+    assert!(alive(pid), "the fake codex should be running before the cancel");
+
+    cancel.store(true, Ordering::Relaxed);
+    let result = handle.join().expect("worker thread");
+    let failure = match result {
+        Ok(_) => panic!("a cancelled run must fail"),
+        Err(e) => e.downcast::<RunFailure>().unwrap_or_else(|e| panic!("{e:#}")),
+    };
+    assert_eq!(failure.kind, FailureKind::Cancelled);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while alive(pid) {
+        if Instant::now() >= deadline {
+            let _ = std::process::Command::new("kill").arg("-9").arg(pid.to_string()).status();
+            panic!("codex pid {pid} is still alive after the cancel");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 #[test]
 fn codex_preflight_reads_the_doctor_report() {
     let doctor = |config: &str, auth: &str| {

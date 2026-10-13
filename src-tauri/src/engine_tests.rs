@@ -377,3 +377,125 @@ fn engine_queue_error_mark_for_claude_codes() {
     assert_eq!(mark("claude_failed"), Some(QueueState::Failed));
     assert_eq!(mark("claude_schema"), Some(QueueState::Failed));
 }
+
+// 8. AC004: a queue stopped by one engine goes on with the other one after a
+//    switch, and only the chosen engine is ever checked or used.
+
+#[test]
+fn engine_queue_stopped_by_one_engine_runs_on_the_other_after_a_switch() {
+    let dir = TestDir::new();
+    let path = dir.choice_path();
+
+    // Claude Code is chosen and logged out: the queue stops with Claude's code.
+    select(&path, EngineKind::Claude).expect("save Claude");
+    let mut checked = Vec::new();
+    let stopped = resolve_for_queue(&path, |engine| {
+        checked.push(engine.kind());
+        Ok(not_logged_in())
+    });
+    match stopped {
+        Ok(_) => panic!("a Claude Code that is not logged in must stop the queue"),
+        Err(error) => assert_eq!(error.code, "claude_not_logged_in"),
+    }
+    assert_eq!(
+        checked,
+        vec![EngineKind::Claude],
+        "only the chosen engine is checked"
+    );
+
+    // The person switches to Codex: the next Article is written by Codex, and
+    // Codex is the only engine the preflight is asked about.
+    select(&path, EngineKind::Codex).expect("save Codex");
+    let mut checked = Vec::new();
+    let engine = resolve_for_queue(&path, |engine| {
+        checked.push(engine.kind());
+        Ok(ready())
+    })
+    .expect("a ready Codex lets the queue go on");
+    assert_eq!(engine.kind(), EngineKind::Codex);
+    assert_eq!(
+        checked,
+        vec![EngineKind::Codex],
+        "only the chosen engine is checked"
+    );
+
+    // And back: a Codex that is stopped does not borrow Claude Code.
+    select(&path, EngineKind::Claude).expect("save Claude");
+    let mut checked = Vec::new();
+    let engine = resolve_for_queue(&path, |engine| {
+        checked.push(engine.kind());
+        Ok(ready())
+    })
+    .expect("a ready Claude Code lets the queue go on");
+    assert_eq!(engine.kind(), EngineKind::Claude);
+    assert_eq!(checked, vec![EngineKind::Claude]);
+}
+
+/// A stopped Codex never falls over to a ready Claude Code (and the reverse):
+/// the stop is reported with the chosen engine's own code and no engine is
+/// handed back.
+#[test]
+fn engine_queue_never_falls_over_to_the_other_engine() {
+    for (kind, preflight, code) in [
+        (
+            EngineKind::Codex,
+            Preflight::NotInstalled,
+            "codex_not_installed",
+        ),
+        (EngineKind::Codex, not_logged_in(), "codex_not_logged_in"),
+        (
+            EngineKind::Claude,
+            Preflight::NotInstalled,
+            "claude_not_installed",
+        ),
+        (EngineKind::Claude, not_logged_in(), "claude_not_logged_in"),
+    ] {
+        let dir = TestDir::new();
+        let path = dir.choice_path();
+        select(&path, kind).expect("save the choice");
+        let mut checked = Vec::new();
+        let result = resolve_for_queue(&path, |engine| {
+            checked.push(engine.kind());
+            Ok(preflight.clone())
+        });
+        match result {
+            Ok(engine) => panic!(
+                "{kind:?} / {preflight:?} must stop, got an engine {:?}",
+                engine.kind()
+            ),
+            Err(error) => assert_eq!(error.code, code),
+        }
+        assert_eq!(
+            checked,
+            vec![kind],
+            "{kind:?}: the other engine must not be checked"
+        );
+    }
+}
+
+/// The Tauri side has exactly one door to an engine: `engine::resolve` /
+/// `engine::resolve_for_queue`, which read the saved choice. Building a CLI by
+/// hand in `lib.rs` would be a way around the choice (and a way to call the
+/// other engine), so none may appear there.
+#[test]
+fn engine_lib_rs_reaches_an_engine_only_through_the_saved_choice() {
+    let lib = include_str!("lib.rs");
+    for forbidden in [
+        "Engine::on_path(",
+        "Engine::Codex(",
+        "Engine::Claude(",
+        "CodexCli",
+        "ClaudeCli",
+        "lita_codex",
+    ] {
+        assert!(!lib.contains(forbidden), "lib.rs must not use {forbidden}");
+    }
+    assert!(
+        lib.contains("engine::resolve("),
+        "generation reads the choice through engine::resolve"
+    );
+    assert!(
+        lib.contains("engine::resolve_for_queue("),
+        "the queue reads the choice through engine::resolve_for_queue"
+    );
+}

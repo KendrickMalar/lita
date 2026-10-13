@@ -404,3 +404,56 @@ fn engine_kind_default_is_codex_and_display_names_are_fixed() {
     assert_eq!(EngineKind::Codex.display_name(), "Codex");
     assert_eq!(EngineKind::Claude.display_name(), "Claude Code");
 }
+
+// ---------------------------------------------------------------------------
+// AC004 additions: cancelling and a missing CLI also stay inside one engine
+// ---------------------------------------------------------------------------
+
+/// A raised flag ends the run as `Cancelled`, reported by the engine that ran,
+/// and the other CLI is never started (no retry on the other engine).
+#[test]
+fn engine_cancelled_run_reports_its_own_engine_and_never_starts_the_other() {
+    for claude in [false, true] {
+        let fake = Spec::new().build();
+        let engine = if claude { fake.claude_engine() } else { fake.codex_engine() };
+        let req = fake.request();
+        let result = within(move || {
+            engine.run_typed_cancellable::<Out>(&req, |_| {}, Arc::new(AtomicBool::new(true)))
+        });
+        let e = failure_of(result);
+        let f = rf(&e);
+        assert_eq!(f.kind, FailureKind::Cancelled, "{e:#}");
+        let (own, other, kind) = if claude {
+            ("claude", "codex", EngineKind::Claude)
+        } else {
+            ("codex", "claude", EngineKind::Codex)
+        };
+        assert_eq!(f.engine, kind, "{e:#}");
+        fake.assert_only(own, other);
+    }
+}
+
+/// The chosen CLI is not installed: the answer is `NotInstalled`, and the
+/// installed other CLI is not used as a stand-in.
+#[test]
+fn engine_missing_cli_is_not_installed_and_the_other_cli_is_not_used() {
+    let fake = Spec::new().build();
+    let missing = fake.dir.path().join("does-not-exist");
+
+    let codex = Engine::Codex(CodexCli::at(missing.clone()));
+    assert_eq!(preflight(codex).expect("codex preflight"), Preflight::NotInstalled);
+    let claude = Engine::Claude(ClaudeCli::at(missing.clone()));
+    assert_eq!(preflight(claude).expect("claude preflight"), Preflight::NotInstalled);
+    assert!(fake.log_lines().is_empty(), "nothing else may be started: {:?}", fake.log_lines());
+
+    // A run through a missing CLI fails, and still starts nothing else.
+    for engine in [
+        Engine::Codex(CodexCli::at(missing.clone())),
+        Engine::Claude(ClaudeCli::at(missing.clone())),
+    ] {
+        let kind = engine.kind();
+        let result = run(engine, fake.request());
+        assert!(result.is_err(), "{kind:?}: a missing CLI cannot produce a value");
+    }
+    assert!(fake.log_lines().is_empty(), "nothing else may be started: {:?}", fake.log_lines());
+}

@@ -3,6 +3,8 @@
 
 mod config;
 mod errors;
+#[cfg(test)]
+mod engine_tests;
 
 use std::collections::HashSet;
 use std::sync::Arc;

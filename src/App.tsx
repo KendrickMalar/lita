@@ -86,11 +86,15 @@ export default function App() {
   }, []);
 
   const check = useCallback(async () => {
+    // Read before waiting: in development StrictMode runs the first check
+    // twice, and the first to finish clears the flag, so a read after the
+    // wait would let the second one close the body the scene opened.
+    const opensBody = sceneOpensBody.current;
     setEngineChecking(true);
     try {
       const next = await host.engineStatus();
       setEngines(next);
-      setBodyOpen(next[next.selected].status === "ready" || sceneOpensBody.current);
+      setBodyOpen(next[next.selected].status === "ready" || opensBody);
     } catch (e) {
       // Unreadable: the engine in use (the last known one, else Codex) is
       // "could not be checked"; the other keeps what was known of it.

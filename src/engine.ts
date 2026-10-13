@@ -42,7 +42,9 @@ export function enginePill(engine: EngineKind, status: EngineStatus | null, chec
   switch (status?.status) {
     case "not_logged_in": return t("engine.pill.notLoggedIn", vars);
     case "not_installed": return t("engine.pill.notInstalled", vars);
-    case "config_broken": return t("codex.pill.configBroken");
+    // Only Codex has a configuration file to fix; for Claude Code it reads as
+    // "could not be checked", as in its steps.
+    case "config_broken": return engine === "codex" ? t("codex.pill.configBroken") : t("engine.pill.error", vars);
     case "error": return t("engine.pill.error", vars);
     default: return null;
   }

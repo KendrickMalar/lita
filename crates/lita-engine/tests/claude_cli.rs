@@ -624,6 +624,119 @@ fn claude_failure_with_unparseable_stdout_is_unknown_and_keeps_stderr() {
     assert!(f.stderr_tail.contains("crash dump"), "stderr_tail: {:?}", f.stderr_tail);
 }
 
+/// A failed result whose `result` text is `text` (and nothing else that could
+/// classify it), run through the fake with the given exit code.
+fn kind_of_result_text(text: &str, exit: i32) -> FailureKind {
+    let out = json!({
+        "type": "result", "subtype": "success", "is_error": true, "result": text
+    })
+    .to_string();
+    let e = failure_of(Spec::new().generation(out, exit, ""));
+    let f = rf(&e);
+    assert_eq!(f.engine, EngineKind::Claude, "wrong engine for {text:?}: {e:#}");
+    f.kind
+}
+
+/// Every judging word of design 3.3, one at a time, through a real run (AC004
+/// "failure classification"). The texts are fictional except the measured one.
+#[test]
+fn claude_failure_every_not_logged_in_word_is_not_logged_in() {
+    for text in [
+        "Not logged in · Please run /login",
+        "please run /login to continue",
+        "API Error: 401 {\"type\":\"error\"}",
+        "Unauthorized",
+        "Invalid API key provided",
+        "OAuth token has expired",
+        "NOT LOGGED IN",
+    ] {
+        assert_eq!(kind_of_result_text(text, 1), FailureKind::NotLoggedIn, "{text:?}");
+    }
+}
+
+#[test]
+fn claude_failure_every_quota_word_is_quota_exhausted() {
+    for text in [
+        "You have reached your usage limit",
+        "5-hour limit reached",
+        "You've hit your limit",
+        "rate limit exceeded",
+        "Quota exceeded",
+        "RATE LIMIT",
+    ] {
+        assert_eq!(kind_of_result_text(text, 1), FailureKind::QuotaExhausted, "{text:?}");
+    }
+}
+
+#[test]
+fn claude_failure_every_schema_word_is_schema_mismatch() {
+    for text in [
+        "Failed to produce structured output",
+        "output does not match the schema",
+        "STRUCTURED OUTPUT was rejected",
+    ] {
+        assert_eq!(kind_of_result_text(text, 1), FailureKind::SchemaMismatch, "{text:?}");
+    }
+    // The subtype alone is enough, with no text at all.
+    let out = json!({
+        "type": "result", "subtype": "error_max_structured_output_retries", "is_error": true,
+        "result": "gave up"
+    })
+    .to_string();
+    assert_kind(Spec::new().generation(out, 1, ""), FailureKind::SchemaMismatch);
+}
+
+/// A failure without any judging word stays `Unknown` whatever the exit code.
+#[test]
+fn claude_failure_without_a_judging_word_is_unknown_for_any_exit_code() {
+    for exit in [1, 2, 137] {
+        assert_eq!(kind_of_result_text("the server fell over", exit), FailureKind::Unknown, "exit {exit}");
+    }
+}
+
+/// Design 3.3 says "first match wins, top to bottom": NotLoggedIn, then
+/// QuotaExhausted, then SchemaMismatch.
+#[test]
+fn claude_failure_order_not_logged_in_then_quota_then_schema() {
+    // 401 status beats a quota word in the text.
+    let out = json!({
+        "type": "result", "subtype": "success", "is_error": true,
+        "api_error_status": 401, "result": "usage limit"
+    })
+    .to_string();
+    assert_kind(Spec::new().generation(out, 1, ""), FailureKind::NotLoggedIn);
+
+    // A login word beats a schema word.
+    assert_eq!(kind_of_result_text("Not logged in, schema unknown", 1), FailureKind::NotLoggedIn);
+
+    // 429 status beats a schema subtype.
+    let out = json!({
+        "type": "result", "subtype": "error_max_structured_output_retries", "is_error": true,
+        "api_error_status": 429, "result": "x"
+    })
+    .to_string();
+    assert_kind(Spec::new().generation(out, 1, ""), FailureKind::QuotaExhausted);
+
+    // A quota word beats a schema word.
+    assert_eq!(kind_of_result_text("quota exceeded while checking the schema", 1), FailureKind::QuotaExhausted);
+}
+
+/// A classified failure still reports the Claude engine and does not carry
+/// anything from `auth status` (email, organisation).
+#[test]
+fn claude_failure_classified_run_keeps_message_and_leaks_nothing() {
+    let out = json!({
+        "type": "result", "subtype": "success", "is_error": true,
+        "api_error_status": 429, "result": "You've hit your limit"
+    })
+    .to_string();
+    let e = assert_kind(Spec::new().generation(out, 1, "stderr line"), FailureKind::QuotaExhausted);
+    let f = rf(&e);
+    assert_eq!(f.exit_code, Some(1));
+    assert!(f.message.as_deref().unwrap_or("").contains("hit your limit"), "{:?}", f.message);
+    assert_error_has_no_secrets(&e, &[]);
+}
+
 // ---------------------------------------------------------------------------
 // 6. Cancelling (B9): the child AND its grandchild must be gone.
 // ---------------------------------------------------------------------------
@@ -738,6 +851,70 @@ fn claude_cancel_returns_cancelled_and_kills_child_and_grandchild() {
             Instant::now() < deadline,
             "after the cancel, child alive = {child_alive} (pid {child_pid}), grandchild alive = {grandchild_alive} (pid {grandchild_pid})"
         );
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Design 3.3: `Cancelled` is judged first, whatever the CLI printed. A raised
+/// flag must not turn into a login, quota or schema failure, or into a value.
+#[test]
+fn claude_cancel_flag_wins_over_whatever_the_cli_printed() {
+    let failing = r#"{"type":"result","subtype":"success","is_error":true,"api_error_status":401,"result":"Not logged in · Please run /login"}"#;
+    for (out, exit) in [(failing.to_string(), 1), (success_json(), 0)] {
+        let fake = Spec::new().generation(out, exit, "").build();
+        let program = fake.claude.clone();
+        let req = fake.request(Effort::Quality, None, "prompt");
+        let cancel = Arc::new(AtomicBool::new(true));
+        let result = within(WATCHDOG_SECS, move || {
+            ClaudeCli::at(program).run_typed_cancellable::<Out>(&req, |_| {}, cancel)
+        });
+        let e = match result {
+            Ok(r) => panic!("a cancelled run must fail, got {:?}", r.value),
+            Err(e) => e,
+        };
+        let f = rf(&e);
+        assert_eq!(f.kind, FailureKind::Cancelled, "{e:#}");
+        assert_eq!(f.engine, EngineKind::Claude);
+    }
+}
+
+/// A flag that is already up before the run starts must still leave nothing
+/// behind: the CLI (if it got to start) and its grandchild are gone.
+#[test]
+fn claude_cancel_before_the_run_leaves_no_process_behind() {
+    let fake = Spec::new()
+        .script(
+            r#"    echo $$ > "$D/c.pid"
+    sleep 300 &
+    echo $! > "$D/gc.pid"
+    wait
+"#,
+        )
+        .build();
+    let _guard = PidGuard { dir: fake.dir.path().to_path_buf() };
+    let program = fake.claude.clone();
+    let req = fake.request(Effort::Quality, None, "prompt");
+    let cancel = Arc::new(AtomicBool::new(true));
+    let result = within(WATCHDOG_SECS, move || {
+        ClaudeCli::at(program).run_typed_cancellable::<Out>(&req, |_| {}, cancel)
+    });
+    let e = match result {
+        Ok(r) => panic!("a cancelled run must fail, got {:?}", r.value),
+        Err(e) => e,
+    };
+    assert_eq!(rf(&e).kind, FailureKind::Cancelled, "{e:#}");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let alive: Vec<i32> = ["c.pid", "gc.pid"]
+            .iter()
+            .filter_map(|n| read_pid(&fake.dir.path().join(n)))
+            .filter(|p| pid_alive(*p))
+            .collect();
+        if alive.is_empty() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "processes still alive after the cancel: {alive:?}");
         thread::sleep(Duration::from_millis(50));
     }
 }

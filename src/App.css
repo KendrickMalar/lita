@@ -579,3 +579,9 @@ h3.step .using { margin-left: auto; font-weight: 400; color: var(--mute); font-s
 @media (prefers-reduced-motion: reduce) {
   .launch-stage, .launch-mark .dot { animation: none; }
 }
+
+/* The engine block of the account menu, and the switch line on the steps screen. */
+.engine-side { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.engine-state { color: var(--mute); font-size: .78rem; }
+.engine-check { display: inline-block; width: 1em; text-align: center; font-weight: 700; }
+.engine-switch { margin-top: 16px; font-size: .88rem; }

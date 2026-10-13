@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { ArticleStatus, CodexStatus, PublishingProfile, SessionStatus, UiError } from "../platform/host";
+import type { ArticleStatus, EngineKind, EnginesStatus, PublishingProfile, SessionStatus, UiError } from "../platform/host";
 import { t } from "../i18n";
 import type { Route } from "./Shell";
 import { ErrorNote } from "./ErrorNote";
+import { EngineMenu, needsSteps } from "./EngineMenu";
+import { ENGINE_KINDS, enginePill } from "../engine";
 import { mockScene } from "../platform/mock";
 
  type Props = {
@@ -11,10 +13,11 @@ import { mockScene } from "../platform/mock";
   onGoTopics: () => void;
   quietNew: boolean;
   session: SessionStatus | null;
-  codex: CodexStatus | null;
-  codexChecking: boolean;
+  engines: EnginesStatus | null;
+  engineChecking: boolean;
+  onSelectEngine: (engine: EngineKind) => Promise<UiError | null>;
   onSignOut: () => void;
-  onShowCodexSteps: () => void;
+  onShowEngineSteps: () => void;
   updateAvailable: string | null;
   onUpdate: () => void;
   profiles: PublishingProfile[];
@@ -29,9 +32,9 @@ import { mockScene } from "../platform/mock";
 export const FILTERS: (ArticleStatus | "all")[] = ["all", "draft"];
 type ProfileMenuMode = "closed" | "menu" | "create" | "rename";
 
-export function Sidebar({ route, onRoute, onGoTopics, quietNew, session, codex, codexChecking, onSignOut, onShowCodexSteps, updateAvailable, onUpdate, profiles, selectedProfile, onSelectProfile, onCreateProfile, onRenameProfile, profileBusy, profileError }: Props) {
+export function Sidebar({ route, onRoute, onGoTopics, quietNew, session, engines, engineChecking, onSelectEngine, onSignOut, onShowEngineSteps, updateAvailable, onUpdate, profiles, selectedProfile, onSelectProfile, onCreateProfile, onRenameProfile, profileBusy, profileError }: Props) {
   // Profiles are switched only from the account menu at the bottom (D-80).
-  const [profileMode, setProfileMode] = useState<ProfileMenuMode>(() => mockScene() === "profiles-menu" ? "menu" : mockScene() === "profiles-create" ? "create" : "closed");
+  const [profileMode, setProfileMode] = useState<ProfileMenuMode>(() => mockScene() === "profiles-menu" || mockScene()?.startsWith("engine-menu") ? "menu" : mockScene() === "profiles-create" ? "create" : "closed");
   const [profileName, setProfileName] = useState("");
   const profileRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
@@ -87,18 +90,18 @@ export function Sidebar({ route, onRoute, onGoTopics, quietNew, session, codex, 
   }, [profileMode]);
 
   const email = session?.status === "signed_in" ? session.email ?? "" : "";
-  const codexOk = codex?.status === "ready";
-  const pill =
-    codexChecking ? null
-    : codex?.status === "not_logged_in" ? t("codex.pill.notLoggedIn")
-    : codex?.status === "not_installed" ? t("codex.pill.notInstalled")
-    : codex?.status === "config_broken" ? t("codex.pill.configBroken")
-    : codex?.status === "error" ? t("codex.pill.error")
-    : null;
+  // The warning is about the engine in use only; while it is being checked
+  // the menu says so and the sidebar stays quiet.
+  const selectedEngine = engines?.selected ?? "codex";
+  const pill = engineChecking ? null : enginePill(selectedEngine, engines?.[selectedEngine] ?? null, false);
   const inArticles = route.kind === "articles" || route.kind === "article" || route.kind === "topics";
   const filter = route.kind === "articles" ? route.filter : null;
-  // Profiles, then rename and new, then sign out.
-  const itemCount = profiles.length + 3;
+  // Profiles, rename and new, the engines (and the way to fix the one in
+  // use, only while it cannot write), then sign out.
+  const engineSlotBase = profiles.length + 2;
+  const engineSlots = ENGINE_KINDS.length + (needsSteps(engines) ? 1 : 0);
+  const signOutSlot = engineSlotBase + engineSlots;
+  const itemCount = signOutSlot + 1;
   const itemKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -160,7 +163,7 @@ export function Sidebar({ route, onRoute, onGoTopics, quietNew, session, codex, 
 
       <div className="side-bottom">
         {updateAvailable && <button className="pill quiet side-pill update-pill" onClick={onUpdate}>{t("update.pill", { v: updateAvailable })}</button>}
-        {pill && <div className="pill warn side-pill"><span>{pill}</span><button className="link" onClick={onShowCodexSteps}>{t("action.seeSteps")}</button></div>}
+        {pill && <div className="pill warn side-pill"><span>{pill}</span><button className="link" onClick={onShowEngineSteps}>{t("action.seeSteps")}</button></div>}
         <div className="acct-wrap" ref={profileRef}>
           <button ref={profileButtonRef} type="button" className="acct" aria-haspopup="menu" aria-expanded={profileMode !== "closed"} aria-label={t("account.menuWithProfile", { name: selectedProfile.name })} disabled={profileBusy} onClick={() => { setProfileMode(profileMode === "closed" ? "menu" : "closed"); }}>
             <span className="avatar" aria-hidden="true">{(email[0] ?? "?").toUpperCase()}</span>
@@ -179,8 +182,17 @@ export function Sidebar({ route, onRoute, onGoTopics, quietNew, session, codex, 
               <button ref={itemRef(profiles.length + 1)} type="button" role="menuitem" className="profile-menu-item profile-action" disabled={profileBusy} onKeyDown={(event) => itemKeyDown(event, profiles.length + 1)} onClick={() => { setProfileName(""); setProfileMode("create"); }}>{t("profile.create")}</button>
               <div className="profile-separator" role="separator" />
               <div className="menu-meta">{email}</div>
-              <div className="menu-meta">{codexOk ? t("status.codexOk") : t("status.codexNotOk")}</div>
-              <button ref={itemRef(profiles.length + 2)} type="button" role="menuitem" className="profile-menu-item" disabled={profileBusy} onKeyDown={(event) => itemKeyDown(event, profiles.length + 2)} onClick={() => { setProfileMode("closed"); onSignOut(); }}>{t("action.signOut")}</button>
+              <EngineMenu
+                engines={engines}
+                checking={engineChecking}
+                onSelect={onSelectEngine}
+                onShowSteps={() => { setProfileMode("closed"); onShowEngineSteps(); }}
+                slotBase={engineSlotBase}
+                itemRef={itemRef}
+                onItemKeyDown={itemKeyDown}
+              />
+              <div className="profile-separator" role="separator" />
+              <button ref={itemRef(signOutSlot)} type="button" role="menuitem" className="profile-menu-item" disabled={profileBusy} onKeyDown={(event) => itemKeyDown(event, signOutSlot)} onClick={() => { setProfileMode("closed"); onSignOut(); }}>{t("action.signOut")}</button>
             </div>
           )}
           {(profileMode === "create" || profileMode === "rename") && (
